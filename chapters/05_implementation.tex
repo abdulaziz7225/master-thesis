@@ -1,0 +1,23 @@
+\chapter{Implementation of the Microservice Prototype}
+\label{chap:implementation}
+
+\section{System Architecture}
+Description of the "Reference Microservice" logic (e.g., a stateless service that performs image processing or cryptographic calculations to stress CPU and Memory).
+
+\section{Baseline Implementation (Golang/Docker)}
+\subsection{Service Design}
+Implementation details using Golang (FastAPI).
+\subsection{Container Optimization}
+Efforts to minimize the Docker image (e.g., using Alpine Linux or Distroless images) to ensure a fair comparison.
+
+\section{Experimental Implementation (Rust/Wasm)}
+\subsection{Service Design}
+Re-implementation of the logic in Rust using the `spin-sdk` or `wasmcloud-actor` SDK.
+\subsection{Compilation and Packaging}
+Compiling to `wasm32-wasi` and packaging as an OCI artifact.
+
+\section{Kubernetes Cluster Configuration}
+\subsection{Runtime Class Setup}
+Configuring `containerd` to use `runwasi` or `spin-shim` for specific workloads.
+\subsection{Ingress and Networking}
+Configuring Traefik or Nginx to route traffic to both the Wasm and Docker services.

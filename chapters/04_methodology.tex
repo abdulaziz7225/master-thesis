@@ -1,0 +1,24 @@
+\chapter{Research Methodology}
+\label{chap:methodology}
+
+\section{Research Strategy: Comparative Analysis}
+This thesis employs a quantitative comparative analysis (A/B testing) to evaluate the suitability of Wasm/Rust against Docker/Golang.
+
+\section{Selection of Technologies}
+\label{sec:tech_selection}
+\subsection{The Baseline: Docker + Golang}
+Justification for choosing Golang (FastAPI/Flask) as the baseline: it represents the industry standard for rapid development but suffers from high memory usage and slow startup (the "Garbage Collection" penalty).
+\subsection{The Challenger: WebAssembly + Rust}
+Justification for Rust: it provides the smallest Wasm binary sizes and lacks a garbage collector, maximizing the potential benefits of the Wasm runtime.
+\subsection{Orchestration: Kubernetes with RuntimeClass}
+Description of the hybrid cluster setup where both artifacts will run side-by-side.
+
+\section{Definition of Metrics}
+\label{sec:metrics}
+\begin{itemize}
+    \item \textbf{Startup Latency (Cold Start):} Time from `kubectl scale` to the first HTTP 200 OK response.
+    \item \textbf{Memory Footprint:} RSS (Resident Set Size) memory usage at idle and under load.
+    \item \textbf{Artifact Size:} Comparison of the OCI image size (Golang slim layers) vs. the Wasm module size.
+    \item \textbf{Throughput & Latency:} Requests Per Second (RPS) and P99 latency under sustained load (using tools like K6 or Hey).
+    \item \textbf{Maintainability (Qualitative):} Assessment of the "Inner Development Loop," debugging difficulty, and CI/CD complexity.
+\end{itemize}

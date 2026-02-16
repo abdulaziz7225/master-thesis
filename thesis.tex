@@ -1,0 +1,61 @@
+\documentclass[]{nsm-thesis}
+% options:
+% [germanthesis] - Thesis is written in German
+% [plainunnumbered] - Don't print numbers on plain pages
+% [earlydraft] - Settings for quick draft printouts
+% [watermark] - Print current time/date at bottom of each page
+% [phdthesis] - switch to PhD thesis style
+% [twoside] - double sided
+% [cutmargins] - text body fills complete page
+
+% 1. Load Configuration and Metadata
+\input{settings/config}
+\input{settings/metadata}
+\input{settings/acronyms}
+
+\begin{document}
+
+% 2. Frontmatter (Roman numbering)
+\pagenumbering{roman}
+\maketitle
+\cleardoublepage
+
+% Abstract
+\input{frontmatter/abstract}
+
+% Table of Contents
+\cleardoublepage
+\tableofcontents
+\cleardoublepage
+
+% 3. Main Content (Arabic numbering)
+\pagenumbering{arabic}
+
+\input{chapters/01_introduction}
+\input{chapters/02_background}
+\input{chapters/03_state_of_the_art}
+\input{chapters/04_methodology}
+\input{chapters/05_implementation}
+\input{chapters/06_evaluation}
+\input{chapters/07_discussion}
+\input{chapters/08_conclusion}
+
+% 4. Backmatter & Appendices
+\appendix
+\input{appendices/01_reproducibility}
+
+% --- 5. Backmatter (Lists & Bibliography) ---
+\cleardoublepage
+
+% These commands generate the lists based on your content
+\listofabbreviations
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+
+% Bibliography
+\printbibliography
+
+\end{document}

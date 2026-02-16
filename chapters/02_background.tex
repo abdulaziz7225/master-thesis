@@ -1,0 +1,48 @@
+\chapter{Background}
+\label{chap:background}
+
+This chapter provides the foundational knowledge required to understand the comparative analysis presented in this thesis. It moves from general cloud concepts to specific container technologies, and finally to a detailed technical overview of WebAssembly.
+
+\section{Cloud Computing and Microservices}
+\label{sec:cloud_microservices}
+\subsection{Cloud Computing Paradigms}
+A brief overview of Cloud Computing, focusing on the evolution from IaaS to FaaS (Function-as-a-Service), highlighting the requirement for rapid elasticity and resource efficiency.
+\subsection{Microservice Architecture}
+Defining Microservices as an architectural style that structures an application as a collection of loosely coupled services. This section discusses the benefits (scalability, agility) and the challenges (orchestration complexity) that necessitate tools like Kubernetes.
+
+\section{Containerization Technologies}
+\label{sec:containerization}
+\subsection{Docker and OCI Containers}
+An explanation of Docker, the Open Container Initiative (OCI) standards, and how Linux namespaces and cgroups provide isolation. It establishes the "baseline" against which WebAssembly is compared.
+\subsection{Kubernetes}
+An introduction to Kubernetes as the de-facto container orchestration platform. Key concepts covered include the API server, Kubelet, Pods, and the Container Runtime Interface (CRI).
+
+\section{WebAssembly (Wasm)}
+\label{sec:wasm}
+\subsection{Origin and Overview}
+WebAssembly was originally announced in 2015 as a portable, size- and load-time-efficient format suitable for compilation to the web. It was designed to enable high-performance applications on web pages.
+\subsection{Technical Details}
+\begin{itemize}
+    \item \textbf{Binary Format:} Wasm uses a compact binary format that is fast to decode.
+    \item \textbf{Stack Machine:} It is defined as a virtual stack machine, unrelated to the physical machine architecture.
+    \item \textbf{Linear Memory:} Security is enforced through a linear memory model that prevents the code from accessing memory outside its sandbox.
+    \item \textbf{Isolation:} The host environment is completely isolated from the module unless imports are explicitly defined.
+\end{itemize}
+\subsection{Phase 1: Frontend and Browser Adoption}
+Initially, Wasm was used to port C/C++ applications (like game engines, video editors, and image processors) to the browser, allowing them to run at near-native speed alongside JavaScript.
+\subsection{Phase 2: Server-Side WebAssembly}
+The "Second Phase" of Wasm involves moving it out of the browser. This section explores why Wasm is ideal for the server side:
+\begin{itemize}
+    \item \textbf{Security:} Default sandboxing makes it safer for multi-tenant environments.
+    \item \textbf{Portability:} "Write once, run anywhere" (creating true universal binaries).
+    \item \textbf{Performance:} Near-instant startup times compared to booting a full container OS.
+\end{itemize}
+\subsection{WASI (WebAssembly System Interface)}
+A critical standard that allows Wasm modules to access system resources (files, network, clocks) in a standardized, secure way, enabling server-side execution.
+
+\section{Container Orchestration}
+\label{sec:orchestration}
+\subsection{Container Runtimes}
+Differentiation between high-level runtimes (Containerd, CRI-O) and low-level runtimes (runc, crun, gVisor).
+\section{Continuum Framework}
+\label{sec:continuum}

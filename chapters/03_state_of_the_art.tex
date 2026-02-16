@@ -1,0 +1,41 @@
+\chapter{State of the Art and Industry Landscape}
+\label{chap:state_of_the_art}
+
+This chapter reviews the theoretical foundations of server-side WebAssembly and surveys the current industrial adoption of Wasm as a microservice runtime. It contrasts academic findings on isolation and performance with real-world platforms provided by major tech vendors.
+
+\section{Theoretical Foundations of Server-Side WebAssembly}
+\label{sec:theoretical_foundation}
+\subsection{The Wasm Security Model vs. Container Isolation}
+An analysis of the "capability-based" security model of WebAssembly (WASI) compared to the Linux namespace and cgroup isolation used by Docker. Discussion includes memory safety, control-flow integrity, and the reduction of the attack surface.
+\subsection{Performance Characteristics in Academia}
+A review of academic benchmarks comparing Wasm execution speeds (JIT vs. AOT compilation) against native code and interpreted languages (like Golang). Focuses on "Cold Start" latency and memory density.
+
+\section{The WebAssembly Component Model}
+\label{sec:component_model}
+Introduction to the Wasm Component Model and WIT (Wasm Interface Type), which solves the "Nano-process" communication problem, allowing microservices to compose without network overhead—a theoretical advantage over traditional HTTP-based microservices.
+
+\section{Industry Adoption and Ecosystem}
+\label{sec:industry_landscape}
+\subsection{Edge Computing Providers}
+\begin{itemize}
+    \item \textbf{Cloudflare Workers:} Utilization of V8 Isolates for near-instant startup.
+    \item \textbf{Akamai & Linode:} Integration of Wasm for edge compute, highlighting their recent acquisition of Fermyon technologies.
+    \item \textbf{Fastly Compute:} Use of the Lucet (now Wasmtime) runtime for sub-millisecond instantiation.
+\end{itemize}
+\subsection{Application Frameworks}
+\begin{itemize}
+    \item \textbf{Fermyon Spin:} A developer-centric framework for building event-driven microservices.
+    \item \textbf{WasmCloud:} An actor-model-based platform focusing on distributed systems and "location transparency".
+    \item \textbf{WasmEdge:} A CNCF sandbox project optimized for AI/ML workloads and extension of cloud-native ecosystems.
+\end{itemize}
+
+\section{WebAssembly in Kubernetes}
+\label{sec:wasm_k8s}
+\subsection{Evolution of Integrations}
+From the deprecated \textit{Krustlet} project to modern \textit{containerd} shims (runwasi).
+\subsection{Modern Operators}
+\begin{itemize}
+    \item \textbf{SpinKube:} The de-facto standard for running Spin apps in K8s.
+    \item \textbf{WasmCloud Operator:} Bridging Kubernetes orchestration with the WasmCloud lattice.
+    \item \textbf{KWasm:} An operator that automates the installation of Wasm shims on K8s nodes.
+\end{itemize}

@@ -1,0 +1,17 @@
+\chapter{Evaluation}
+\label{chap:evaluation}
+
+\section{Benchmark Environment}
+Hardware specifications of the Kubernetes cluster (local Minikube vs. Managed Cloud K8s) and the load testing tools used.
+
+\section{Results: Startup Performance}
+Presentation of data showing the "Cold Start" gap between the Golang VM initialization vs. Wasm JIT instantiation.
+
+\section{Results: Resource Efficiency}
+Analysis of memory density. (Expected Result: Wasm modules using <5MB vs Golang containers using >50MB).
+
+\section{Results: Runtime Performance}
+Comparison of raw CPU throughput. Discussion on whether the lack of Garbage Collection in Rust/Wasm offsets the overhead of the Wasm runtime sandbox compared to Native Golang.
+
+\section{Qualitative Analysis: Developer Experience}
+Documentation of the challenges faced during the Rust migration and K8s integration (e.g., debugging Wasm modules, ecosystem maturity).
