@@ -1,0 +1,72 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{tikz}
+\usepackage[graphics, active, tightpage]{preview}
+\PreviewEnvironment{tikzpicture}
+
+% Enforce an exact 0.5cm padding on all sides of the exported PDF
+\setlength{\PreviewBorder}{0.5cm}
+
+% Required TikZ libraries
+\usetikzlibrary{matrix, positioning}
+
+% Define the specific green and red base colors requested
+\definecolor{YouColor}{HTML}{00C853}   % Bright Green
+\definecolor{ProvColor}{HTML}{DD2C00}  % Deep Red/Orange
+
+% Define global styles mimicking your template structure
+\tikzset{
+    globalfont/.style={font=\sffamily},
+    cell/.style={
+        rectangle, rounded corners=2pt, 
+        minimum width=2.6cm, text width=2.4cm, % Forces text wrapping for long words
+        minimum height=0.6cm, align=center, inner sep=2pt, font=\bfseries\small
+    },
+    % Updated styles: Light fill, thick colored border, black text for readability
+    user/.style={cell, fill=YouColor!15, draw=YouColor, thick, text=black},
+    provider/.style={cell, fill=ProvColor!15, draw=ProvColor, thick, text=black},
+    header/.style={
+        font=\bfseries\large, text depth=0.5ex, text height=2ex, 
+        align=center, minimum width=2.6cm
+    },
+    vline/.style={draw=gray!40, thin, dashed, yshift=-0.2cm, dash phase=2pt}
+}
+
+\begin{document}
+
+\begin{tikzpicture}[globalfont]
+
+    % Construct the matrix grid
+    \matrix (m) [matrix of nodes, nodes in empty cells, row sep=1.8mm, column sep=2.5mm]
+    {
+        |[header]| On-Premises & |[header]| IaaS & |[header]| PaaS & |[header]| FaaS & |[header]| SaaS \\
+        |[user]| Applications & |[user]| Applications & |[user]| Applications & |[user]| Applications & |[provider]| Applications \\
+        |[user]| Data         & |[user]| Data         & |[user]| Data         & |[provider]| Data         & |[provider]| Data \\
+        |[user]| Runtime      & |[user]| Runtime      & |[provider]| Runtime  & |[provider]| Runtime  & |[provider]| Runtime \\
+        |[user]| Middleware   & |[user]| Middleware   & |[provider]| Middleware & |[provider]| Middleware & |[provider]| Middleware \\
+        |[user]| Operating Systems & |[user]| Operating Systems & |[provider]| Operating Systems & |[provider]| Operating Systems & |[provider]| Operating Systems \\
+        |[user]| Virtualization & |[provider]| Virtualization & |[provider]| Virtualization & |[provider]| Virtualization & |[provider]| Virtualization \\
+        |[user]| Servers      & |[provider]| Servers  & |[provider]| Servers  & |[provider]| Servers  & |[provider]| Servers \\
+        |[user]| Storage      & |[provider]| Storage  & |[provider]| Storage  & |[provider]| Storage  & |[provider]| Storage \\
+        |[user]| Networking   & |[provider]| Networking & |[provider]| Networking & |[provider]| Networking & |[provider]| Networking \\
+    };
+
+    % Draw vertical separating lines
+    \foreach \i in {1,...,4}
+    {
+        \pgfmathsetmacro\j{int(\i+1)}
+        \draw[vline] ([xshift=-1.25mm]m-1-\j.west) -- ([xshift=-1.25mm]m-10-\j.west);
+    }
+
+    % Build the Legend
+    % Left Legend Item: Styled to match the light fill + border of the 'user' style
+    \node[fill=YouColor!15, draw=YouColor, thick, rounded corners=2pt, minimum width=0.5cm, minimum height=0.5cm, inner sep=0pt, below=0.2cm of m.south, xshift=-3cm] (leg_user) {};
+    \node[right=0.2cm of leg_user, font=\small\bfseries, text=black] (text_user) {You Manage};
+
+    % Right Legend Item: Styled to match the light fill + border of the 'provider' style
+    \node[fill=ProvColor!15, draw=ProvColor, thick, rounded corners=2pt, minimum width=0.5cm, minimum height=0.5cm, inner sep=0pt, below=0.2cm of m.south, xshift=1cm] (leg_prov) {};
+    \node[right=0.2cm of leg_prov, font=\small\bfseries, text=black] (text_prov) {Provider Manages};
+
+\end{tikzpicture}
+
+\end{document}

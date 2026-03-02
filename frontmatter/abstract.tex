@@ -2,18 +2,12 @@
 \addcontentsline{toc}{chapter}{Abstract}
 \begin{otherlanguage*}{american}
 
-about 1/2 page:
-\begin{enumerate}
-    \item Motivation (Why do we care?)
-    \item Problem statement (What problem are we trying to solve?)
-    \item Approach (How did we go about it)
-    \item Results (What's the answer?)
-    \item Conclusion (What are the implications of the answer?)
-\end{enumerate}
+WebAssembly (Wasm) is a binary instruction format originally designed for web browsers that provides a portable, high-performance execution environment. It enables web browsers to execute code written in multiple languages seamlessly, delivering high performance across different platforms. While Wasm’s use on the client side is well known, with the introduction of the WebAssembly System Interface (WASI), its deployment on the server side has recently gained traction, especially in containerized environments managed in Kubernetes clusters. However, integrating Wasm into container runtimes presents challenges related to concurrency, efficient use of multi-core CPU architectures, developer experience, and ecosystem maturity. 
 
-The abstract is a miniature version of the thesis.
-It should be treated as an entirely separate document.
-Do not assume that a reader who has access to an abstract will also have access to the thesis.
-Do not assume that a reader who reads the thesis has read the abstract.
+While Docker remains the de facto standard for containerization in Kubernetes environments, its relatively high resource consumption and startup times can be limiting, especially in scenarios that require rapid scaling or high efficiency. In contrast, WebAssembly promises a more lightweight execution model, with near-instant startup and reduced memory usage.
+
+This thesis explores the memory efficiency/footprint, cold and warm start-up times, security and performance trade-offs introduced by running Rust code in a Wasm runtime, the ecosystem maturity, and the development experience of Wasm versus conventional Linux containers deployed with Docker. It also analyzes maintainability and operational complexity for real-world cloud deployments and provides recommendations and best practices for adopting WebAssembly in cloud-native environments.
+
+The findings of the thesis indicate that Wasm containers feature significantly lower image sizes than Docker containers and can improve cold-start times considerably. However, due to Wasm's lack of multithreading support, the application's performance degrades significantly, leading to increased latencies and reduced throughput compared to conventional containers. Furthermore, the Wasm execution model requires including only those libraries that can be compiled to WASM binary, since not all libraries, third-party packages are written in Rust language (those that heavily rely on C, C++ standard library) can not be fully compiled to WASM binary, which limits the number of libraries at our disposal, while developing with WebAssembly. Plus, with the Rust programming language notoriously known for its steep learning curve, it adds an extra layer of difficulty to developing and maintaining WASM-based projects. Despite the growing adoption of Rust, the small pool of proficient Rust and WebAssembly experts remains limited, with most remaining primarily in research and academia. Nevertheless, the current technology limitations of Wasm still present more challenges than what it actually brings to the table compared to conventional Docker containers when it comes to developing next high-scale projects in the current rapidly evolving market, where every single second matters in launching your product, releasing new features, and versions before everyone else.
 
 \end{otherlanguage*}

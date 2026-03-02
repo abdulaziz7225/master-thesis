@@ -2,18 +2,49 @@
 \label{chap:introduction}
 
 \section{Context}
-The modern cloud landscape is dominated by microservices and containerization. However, as the demand for edge computing and high-density serverless functions grows, the overhead of traditional containers becomes a limiting factor. This section introduces the shift toward lightweight execution environments.
+The modern cloud computing landscape relies heavily on microservices and containerization to deliver scalable, resilient applications. Docker and the Open Container Initiative (OCI) standards, frequently paired with mature backend languages like Golang, have become the de facto foundation for these deployments within Kubernetes environments \cite{merkel2014docker, burns2016borg}. This traditional cloud-native stack prioritizes a frictionless developer experience and mature tooling. However, the growing demand for edge computing, high-density serverless functions, and instantaneous scaling has exposed the architectural limitations of conventional Linux containers. OCI containers rely on operating-system-level virtualization, which carries a baseline overhead in both memory consumption and initialization time \cite{shillaker2020faasm}.
+
+As organizations seek to maximize hardware utilization and minimize latency, a shift toward more lightweight execution environments is underway. WebAssembly (Wasm), originally designed as a highly optimized, stack-based virtual machine binary format for web browsers \cite{haas2017bringing}, has emerged as a potential solution for server-side workloads. With the introduction of the WebAssembly System Interface (WASI), Wasm promises a portable, secure, and near-instantaneous execution model that operates without the heavy dependencies of a traditional Linux container \cite{lin2022wasmedge}.
 
 \section{Problem Statement}
-Standard OCI containers (like Docker) introduce significant overhead in terms of memory footprint and cold-start latency. This thesis addresses the inefficiency of using full OS-level virtualization for small, transient microservices.
+Standard OCI containers introduce measurable overhead regarding memory footprint and cold-start latency. While negligible for traditional monolithic applications, this overhead becomes a severe limiting factor for transient microservices that require rapid, sub-millisecond scaling. The emerging WebAssembly stack theoretically solves this by utilizing software-based fault isolation (SFI) to strip away the operating system layer entirely, offering drastically reduced image sizes and high-density execution \cite{gadepalli2020challenges}.
+
+However, transitioning from a mature ecosystem to a nascent one introduces substantial, often under-documented friction. The core problem this thesis addresses is the tension between computational efficiency and developer velocity. While the Wasm ecosystem promises high performance for server-side workloads, it currently lacks robust multithreading capabilities, enforces strict limitations on compiled network dependencies, and demands specialized expertise in systems languages like Rust. 
+
+There is a critical need to empirically quantify the holistic trade-offs of these two paradigms. It must be determined whether the theoretical efficiency gains of the Wasm stack outweigh the practical performance degradations and the operational complexities it introduces compared to the industry-standard Docker baseline.
 
 \section{Research Questions}
+To address the problem statement, this thesis investigates the following primary research questions:
 \begin{itemize}
-    \item \textbf{RQ1:} How does the memory footprint of WebAssembly modules compare to traditional Docker containers in a Kubernetes environment?
-    \item \textbf{RQ2:} Can WebAssembly runtimes offer superior startup performance compared to standard container runtimes?
+    \item \textbf{RQ1:} How does the memory footprint and image size of the emerging Wasm stack compare to a traditional Docker baseline in a Kubernetes environment?
+    \item \textbf{RQ2:} To what extent do WebAssembly runtimes improve cold and warm startup latencies compared to standard OCI container runtimes executing garbage-collected binaries?
+    \item \textbf{RQ3:} What are the runtime performance trade-offs—specifically regarding request throughput and execution latency—introduced by WebAssembly’s current constraints on multithreading compared to Golang's native concurrency model?
+    \item \textbf{RQ4:} How do ecosystem limitations, specifically regarding the Rust learning curve, WASI compatibility, and CI/CD integration, impact the developer experience and maintainability when migrating from a traditional containerized pipeline?
 \end{itemize}
 
 \section{Research Methodology}
+This research employs a mixed-methods approach, combining quantitative performance benchmarking with a qualitative assessment of developer experience. 
+
+Rather than isolating the runtime—which would necessitate comparing equivalent languages and thereby destroying the ability to measure real-world developer experience—this study compares the two dominant paradigms in their native contexts. First, a baseline microservice is developed using Golang and compiled into a standard Linux-based Docker image. Second, a functionally equivalent alternative is developed using Rust and compiled into a WASI-compliant WebAssembly module. Both artifacts are deployed into an isolated Kubernetes test cluster utilizing \texttt{containerd}, standard \texttt{runc}, and a Wasm shim. 
+
+Quantitative data is gathered by subjecting both deployments to standardized load testing. Monitoring tools are used to measure cold-start times, memory consumption, CPU utilization, throughput, and request latency. While this approach acknowledges that language-level differences (e.g., Go's garbage collection versus Rust's manual memory management) influence the final metrics, it is strictly designed to reflect the real-world performance delta an engineering team experiences when transitioning between these technological stacks. Second, a qualitative analysis is conducted on the development lifecycle, documenting compilation friction, library compatibility, and pipeline integration complexity.
+
 \section{Thesis Contributions}
-\section{Plagiarism Declaration}
+This thesis provides the following key contributions to the field of cloud-native architecture:
+\begin{enumerate}
+    \item \textbf{Holistic Paradigm Benchmark:} A side-by-side performance comparison of the Golang/Docker stack versus the Rust/Wasm stack, highlighting specific metrics where the Wasm ecosystem succeeds (density, initialization) and where it currently fails (throughput, computational latency).
+    \item \textbf{Developer Experience Assessment:} A critical evaluation of the current state of WebAssembly for backend development, quantifying the engineering friction of compiling Rust code to WASI and navigating incompatible library dependencies compared to standard Go development.
+    \item \textbf{Adoption Framework:} Actionable recommendations for cloud architects, delineating specific use cases where the Rust/Wasm stack is currently viable and identifying the operational risks that make it unsuitable for rapid-iteration product teams accustomed to the Go/Docker ecosystem.
+\end{enumerate}
+
 \section{Thesis Structure}
+The remainder of this thesis is structured as follows:
+\begin{itemize}
+    \item \textbf{Chapter 2: Background} provides the foundational technical context on cloud computing paradigms, containerization technologies, the Go concurrency model, and the evolution of WebAssembly and WASI.
+    \item \textbf{Chapter 3: State of the Art} reviews the theoretical foundations of Wasm's security, the emerging Component Model, and current industry adoption.
+    \item \textbf{Chapter 4: Research Methodology} defines the comparative analysis strategy, establishing the Golang/Docker baseline against the Rust/Wasm challenger, and outlines the precise metrics.
+    \item \textbf{Chapter 5: Implementation} details the system architecture, service design, compilation processes, and Kubernetes cluster configuration for both environments.
+    \item \textbf{Chapter 6: Evaluation} presents the quantitative benchmark results alongside the qualitative assessment of the developer experience.
+    \item \textbf{Chapter 7: Discussion and Future Work} analyzes the trade-offs between technological maturity, computational efficiency, and developer velocity.
+    \item \textbf{Chapter 8: Conclusion} summarizes the core findings and final verdicts of the research.
+\end{itemize}

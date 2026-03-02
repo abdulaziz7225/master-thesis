@@ -1,0 +1,169 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{tikz}
+\usepackage[graphics, active, tightpage]{preview}
+\PreviewEnvironment{tikzpicture}
+
+\usetikzlibrary{matrix, positioning, fit, backgrounds, calc, shapes.multipart}
+
+\definecolor{YouManageColor}{HTML}{1A237E}
+\definecolor{ProvManageColor}{HTML}{E3F2FD}
+\definecolor{BorderColor}{HTML}{455A64}
+\definecolor{InfraColor}{HTML}{1565C0}
+\definecolor{EngineColor}{HTML}{FBC02D}
+\definecolor{GuestOSColor}{HTML}{EF6C00}
+
+\setlength{\PreviewBorder}{0.5cm}
+
+\tikzset{
+    globalfont/.style={font=\sffamily},
+    cell/.style={rectangle, rounded corners=3pt, minimum height=0.6cm, align=center, font=\bfseries\small, inner sep=3pt},
+    app/.style={cell, fill=YouManageColor, text=white, minimum height=1cm},
+    host/.style={cell, fill=ProvManageColor, text=black},
+    standardspacing/.style={node distance=2.5mm},
+    boundary/.style={draw=BorderColor, dashed, thick, rounded corners=4pt},
+    figuretitle/.style={font=\bfseries\large, align=center, text width=10cm},
+    pillarheader/.style={font=\bfseries\normalsize, text=gray!80!black},
+    legendbox/.style={rectangle, rounded corners=2pt, minimum width=0.5cm, minimum height=0.5cm},
+    legendtext/.style={font=\bfseries\small, text=black},
+}
+
+\begin{document}
+
+\begin{tikzpicture}[globalfont, node distance=3mm]
+
+    % TITLE
+    \node[figuretitle] (main_title) {Infrastructure Isolation Models:\\Virtual Machines vs. Docker Containers};
+
+    % ================================================================
+    % LEFT PILLAR: VIRTUAL MACHINES
+    % ================================================================
+
+    % Shifted vertical base further down (from 8cm to 8.5cm) to increase title gap
+    \node[host, fill=EngineColor!80!black, text=white, text width=7.2cm, minimum height=0.9cm,
+          below=8.5cm of main_title, xshift=-5.0cm] (vm_hv) {Hypervisor / Virtual Machine Manager};
+
+    \node[host, fill=InfraColor, text=white, text width=7.2cm, minimum height=0.9cm,
+          below=3mm of vm_hv] (vm_hostos) {Host Operating System (Shared Kernel)};
+
+    % VM 1 
+    \node[host, fill=GuestOSColor!80, text=white, text width=3.2cm, minimum height=0.8cm,
+          above=12mm of vm_hv, xshift=-1.95cm] (vm1_os) {Guest OS (Full Stack)};
+    \node[app, fill=InfraColor!30, text=black, text width=3.2cm,
+          above=3mm of vm1_os] (vm1_deps) {Guest Bins \& Libs /\\Middleware \& Runtime};
+    \node[app, fill=InfraColor!60, text=white, minimum height=1.3cm, text width=3.2cm,
+          above=3mm of vm1_deps] (vm1_app) {Application Logic\\(e.g., Python, Java)};
+
+    \node[boundary, fit=(vm1_app)(vm1_deps)(vm1_os), inner sep=2mm] (vm1_scope) {};
+    \node[above=2mm of vm1_scope, font=\bfseries\small, text=BorderColor] (vm1_label) {Virtual Machine 1};
+
+    % VM 2 
+    \node[host, fill=GuestOSColor!80, text=white, text width=3.2cm, minimum height=0.8cm,
+          above=12mm of vm_hv, xshift=1.95cm] (vm2_os) {Guest OS (Full Stack)};
+    \node[app, fill=YouManageColor!50, text=black, text width=3.2cm,
+          above=3mm of vm2_os] (vm2_deps) {Bins \& Libs / Dependency\\Middleware / Runtime};
+    \node[app, fill=YouManageColor!80, text=white, minimum height=1.3cm, text width=3.2cm,
+          above=3mm of vm2_deps] (vm2_app) {Application Logic\\(Alternative Stack)};
+
+    \node[boundary, fit=(vm2_app)(vm2_deps)(vm2_os), inner sep=2mm] (vm2_scope) {};
+    \node[above=2mm of vm2_scope, font=\bfseries\small, text=BorderColor] (vm2_label) {Virtual Machine 2};
+
+    % Left Pillar Headers
+    \node[pillarheader, above=5mm of vm1_label, xshift=1.95cm] (vm_subtitle)
+          {(Traditional Hardware Virtualization)};
+
+    \begin{scope}[on background layer]
+        \node[fill=gray!10, rounded corners=6pt, inner sep=5mm,
+              fit=(vm_subtitle)(vm1_label)(vm2_label)(vm1_scope)(vm2_scope)(vm_hv)(vm_hostos)] (vm_server) {};
+    \end{scope}
+    \node[below=2mm of vm_server, font=\bfseries\normalsize, text=gray!70!black]
+         {Server with Virtual Machines};
+
+    % ================================================================
+    % RIGHT PILLAR: DOCKER CONTAINERS
+    % ================================================================
+
+    % Shifted vertical base further down (from 8cm to 8.5cm) to increase title gap
+    \node[host, fill=InfraColor!80, text=white, text width=7.2cm, minimum height=0.9cm,
+          below=8.5cm of main_title, xshift=5.0cm] (docker_engine) {Container Engine (Docker)};
+
+    \node[host, fill=YouManageColor!15, text=black, text width=7.2cm, minimum height=0.9cm,
+          below=3mm of docker_engine] (docker_hostos) {Host Operating System Kernel};
+
+    % Container 1 
+    \node[app, fill=YouManageColor!70, text=white, text width=2.0cm,
+          above=12mm of docker_engine, xshift=-2.5cm] (c1_deps) {Bins \& Libs /\\Dependency};
+    \node[app, fill=YouManageColor!95, text=white, minimum height=1.3cm, text width=2.0cm,
+          above=3mm of c1_deps] (c1_app) {Application\\Logic};
+
+    \node[boundary, fit=(c1_app)(c1_deps), inner sep=1mm] (c1_scope) {};
+    \node[above=2mm of c1_scope, font=\bfseries\small, text=BorderColor] (c1_label) {Container 1};
+
+    % Container 2 
+    \node[app, fill=YouManageColor!70, text=white, text width=2.0cm,
+          above=12mm of docker_engine, xshift=0cm] (c2_deps) {Bins \& Libs /\\Dependency};
+    \node[app, fill=YouManageColor!95, text=white, minimum height=1.3cm, text width=2.0cm,
+          above=3mm of c2_deps] (c2_app) {Application\\Logic};
+
+    \node[boundary, fit=(c2_app)(c2_deps), inner sep=1mm] (c2_scope) {};
+    \node[above=2mm of c2_scope, font=\bfseries\small, text=BorderColor] (c2_label) {Container 2};
+
+    % Container 3 
+    \node[app, fill=YouManageColor!70, text=white, text width=2.0cm,
+          above=12mm of docker_engine, xshift=2.5cm] (c3_deps) {Bins \& Libs /\\Dependency};
+    \node[app, fill=YouManageColor!95, text=white, minimum height=1.3cm, text width=2.0cm,
+          above=3mm of c3_deps] (c3_app) {Application\\Logic};
+
+    \node[boundary, fit=(c3_app)(c3_deps), inner sep=1mm] (c3_scope) {};
+    \node[above=2mm of c3_scope, font=\bfseries\small, text=BorderColor] (c3_label) {Container 3};
+
+    % Right Pillar Headers
+    \node[pillarheader, above=5mm of c2_label] (container_subtitle)
+          {(Modern OS-Level Isolation)};
+
+    \begin{scope}[on background layer]
+        \node[fill=gray!10, rounded corners=6pt, inner sep=5mm,
+              fit=(container_subtitle)(c1_label)(c3_label)(c1_scope)(c3_scope)(docker_engine)(docker_hostos)] (container_server) {};
+    \end{scope}
+    \node[below=2mm of container_server, font=\bfseries\normalsize, text=gray!70!black]
+         {Server with Docker Containers};
+
+    % ================================================================
+    % LEGEND & RESPONSIBILITY OVERLAYS
+    % ================================================================
+    \definecolor{YouColor}{HTML}{00C853}
+    \definecolor{ProvColor}{HTML}{DD2C00}
+
+    \coordinate (legend_center) at ($(vm_server.south)!0.5!(container_server.south) - (0, 1.2cm)$);
+
+    \node[legendbox, fill=YouColor] at ($(legend_center) - (3cm, 0)$) (leg1_box) {};
+    \node[legendtext, right=3mm of leg1_box] (leg1_text) {You manage (User Space / Application Stack)};
+
+    \node[legendbox, fill=ProvColor, below=4mm of leg1_box] (leg2_box) {};
+    \node[legendtext, right=3mm of leg2_box] {Provider manages (Host Infra / Platform)};
+
+    \begin{scope}[on background layer]
+        % VM side overlays
+        \node[fit=(vm1_label)(vm2_label)(vm1_scope)(vm2_scope), fill=YouColor!15, opacity=0.8, draw=YouColor,
+              thick, rounded corners=6pt, inner sep=3mm] (vm_user_fit) {};
+        \node[fit=(vm_hv)(vm_hostos), fill=ProvColor!15, opacity=0.8, draw=ProvColor,
+              thick, rounded corners=6pt, inner sep=3mm] (vm_prov_fit) {};
+              
+        % Container side overlays
+        \node[fit=(c1_label)(c2_label)(c3_label)(c1_scope)(c3_scope), fill=YouColor!15, opacity=0.8, draw=YouColor,
+              thick, rounded corners=6pt, inner sep=3mm] (c_user_fit) {};
+        \node[fit=(docker_engine)(docker_hostos), fill=ProvColor!15, opacity=0.8, draw=ProvColor,
+              thick, rounded corners=6pt, inner sep=3mm] (c_prov_fit) {};
+    \end{scope}
+
+    % Responsibility text labels
+    \node[font=\bfseries\small, text=YouColor, align=center] at ($(vm_user_fit.west) - (1.5cm, 0)$) {You\\manage};
+    \node[font=\bfseries\small, text=ProvColor, align=center] at ($(vm_prov_fit.west) - (1.5cm, 0)$) {Provider\\manages};
+    
+    \node[font=\bfseries\small, text=YouColor, align=center] at ($(c_user_fit.east) + (1.5cm, 0)$) {You\\manage};
+    \node[font=\bfseries\small, text=ProvColor, align=center] at ($(c_prov_fit.east) + (1.5cm, 0)$) {Provider\\manages};
+
+\end{tikzpicture}
+
+\end{document}

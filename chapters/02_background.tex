@@ -1,48 +1,103 @@
 \chapter{Background}
 \label{chap:background}
 
-This chapter provides the foundational knowledge required to understand the comparative analysis presented in this thesis. It moves from general cloud concepts to specific container technologies, and finally to a detailed technical overview of WebAssembly.
+This chapter provides the foundational technical context required to evaluate the comparative analysis presented in this thesis. It traces the evolution of computing infrastructure from on-premises hardware to modern cloud paradigms, details the mechanics of containerization and orchestration, and culminates in a comprehensive architectural breakdown of WebAssembly as an emerging server-side execution environment.
 
 \section{Cloud Computing and Microservices}
 \label{sec:cloud_microservices}
-\subsection{Cloud Computing Paradigms}
-A brief overview of Cloud Computing, focusing on the evolution from IaaS to FaaS (Function-as-a-Service), highlighting the requirement for rapid elasticity and resource efficiency.
-\subsection{Microservice Architecture}
-Defining Microservices as an architectural style that structures an application as a collection of loosely coupled services. This section discusses the benefits (scalability, agility) and the challenges (orchestration complexity) that necessitate tools like Kubernetes.
 
-\section{Containerization Technologies}
+\subsection{The Evolution of Cloud Paradigms}
+The genesis of modern software deployment traces back to on-premises data centers, where organizations were solely responsible for the procurement, maintenance, and scaling of physical hardware. This capital-heavy model suffered from severe resource underutilization; servers were provisioned for peak load, leaving them idle during standard operations. The modern cloud computing era shifted the industry to a pay-as-you-go, scalable operational model, fundamentally altering how infrastructure is managed \cite{mell2011nist}.
+
+As cloud computing matured, the industry developed a "Shared Responsibility Model," where the abstraction layer moved progressively higher up the stack. This spectrum dictates whether the cloud provider or the client is responsible for specific layers of the technological stack:
+
+\begin{itemize}
+    \item \textbf{Infrastructure as a Service (IaaS):} The cloud provider manages the physical hardware, storage, and networking. The client rents virtualized infrastructure (e.g., a Virtual Machine) and retains full responsibility for managing the operating system, middleware, language runtimes, and the application code itself. This offers maximum control but requires significant operational overhead.
+    \item \textbf{Platform as a Service (PaaS):} The provider abstracts both the underlying hardware and the operating system. The client is provided a managed environment and is solely responsible for deploying their application code and managing their data. Traditional Docker container deployments often operate in this space.
+    \item \textbf{Function as a Service (FaaS) / Serverless:} The highest level of \textit{infrastructure} abstraction for a developer. The cloud provider dynamically manages the allocation, provisioning, and scaling of the servers and runtimes. The client writes granular, event-driven functions and dictates the trigger configurations. The client is still strictly responsible for the software architecture and code quality. Crucially, FaaS allows applications to "scale to zero," eliminating compute costs during periods of inactivity \cite{jonas2019cloud}.
+    \item \textbf{Software as a Service (SaaS):} The highest level of \textit{software} abstraction. The cloud provider hosts and manages the entire application stack—from the hardware and OS up to the application code itself. The client manages nothing regarding the deployment or execution environment; they simply consume the finished software over the internet (e.g., Google Workspace, Salesforce).
+\end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/iaas_paas_faas_saas.pdf}
+    \caption{The Shared Responsibility Model across varying Cloud Computing Paradigms.}
+    \label{fig:shared_responsibility}
+\end{figure}
+
+For the purposes of this research, SaaS falls outside the scope of architectural implementation. The critical transition lies between PaaS and FaaS. The relentless industry drive toward rapid elasticity, microsecond billing, and extreme resource efficiency in FaaS and edge environments exposed the limitations of traditional, heavy deployment artifacts. Developers pushing code to serverless platforms require instantaneous execution. Standard OCI containers, laden with operating system userlands, introduce severe latency bottlenecks in these paradigms, necessitating a shift toward the lightweight isolation models that WebAssembly provides.
+
+\subsection{Microservice Architecture}
+Microservice architecture emerged as the logical software design pattern for cloud-native deployment. Unlike traditional monolithic applications—where all business logic, user interfaces, and database connections are tightly coupled into a single executable—microservices decompose an application into a collection of small, independently deployable, and loosely coupled services that communicate over a network via language-agnostic APIs \cite{newman2015building}.
+
+This paradigm offers distinct advantages: development agility, localized fault isolation, and the ability to scale specific system bottlenecks independently. However, it introduces severe distributed system challenges. Managing network latency, data consistency, and the operational overhead of packaging and deploying hundreds of individual services necessitated the creation of entirely new virtualization and orchestration layers.
+
+\section{Containerization and Orchestration}
 \label{sec:containerization}
-\subsection{Docker and OCI Containers}
-An explanation of Docker, the Open Container Initiative (OCI) standards, and how Linux namespaces and cgroups provide isolation. It establishes the "baseline" against which WebAssembly is compared.
-\subsection{Kubernetes}
-An introduction to Kubernetes as the de-facto container orchestration platform. Key concepts covered include the API server, Kubelet, Pods, and the Container Runtime Interface (CRI).
+
+\subsection{Virtual Machines vs. Containers}
+To solve the deployment complexity of microservices, the industry initially relied on Virtual Machines. However, VMs require a hypervisor to emulate physical hardware, atop which a complete guest OS is installed. This results in gigabytes of memory overhead and startup times measured in minutes, making them inherently unsuitable for transient, rapidly scaling microservices.
+
+Docker revolutionized the landscape by democratizing Linux containers. Instead of virtualizing the hardware, containers virtualize the operating system \cite{merkel2014docker}. Docker relies on two core Linux kernel features:
+\begin{enumerate}
+    \item \textbf{Namespaces:} Provide process isolation, ensuring the container has its own isolated filesystem, network interfaces, and process tree.
+    \item \textbf{Cgroups (Control Groups):} Limit, isolate, and monitor the resource usage (CPU, memory, disk I/O) of a given process.
+\end{enumerate}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/virtual_machine_vs_docker.pdf}
+    \caption{Infrastructure Isolation Models: Virtual Machines vs. Docker Containers}
+    \label{fig:shared_responsibility}
+\end{figure}
+
+Docker’s definitive innovation was the standardization of the container image format, now governed by the Open Container Initiative (OCI). By packaging application code alongside its dependencies, libraries, and a base filesystem into a single portable unit, Docker ensured environment consistency from a developer's laptop to production servers.
+
+Despite its dominance, the OCI standard has inherent drawbacks. Because containers share the host's Linux kernel, a kernel-level vulnerability can potentially compromise all containers on that host, posing security risks in multi-tenant environments. Furthermore, traditional container images are bulky; they bundle a userland OS and language runtimes alongside the application. This bulk introduces latency during image transfer and initialization—known as the "cold start" problem—which is highly detrimental in FaaS and edge computing environments \cite{gadepalli2020challenges}.
+
+\subsection{Kubernetes Orchestration}
+As microservices proliferated, manually managing individual containers across a fleet of servers became operationally unfeasible. Kubernetes emerged as the industry-standard container orchestration platform. It abstracts the underlying cluster of hardware, allowing engineers to declare the desired state of their applications rather than manually scripting deployments \cite{burns2016borg}.
+
+Kubernetes operates on a distributed architecture. The Control Plane dictates instructions to worker nodes. Each worker node runs an agent called a Kubelet, which manages Pods—the smallest deployable computing unit, typically containing one or more tightly coupled containers. Crucially, Kubernetes communicates with the underlying container runtime (like containerd or CRI-O) via the Container Runtime Interface (CRI). This decoupled architecture established strict standardizations, eventually allowing alternative, non-Linux execution environments, such as WebAssembly, to be orchestrated seamlessly alongside standard OCI-compliant containers.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/k8s_architecture.pdf}
+    \caption{Kubernetes Architecture}
+    \label{fig:shared_responsibility}
+\end{figure}
 
 \section{WebAssembly (Wasm)}
 \label{sec:wasm}
-\subsection{Origin and Overview}
-WebAssembly was originally announced in 2015 as a portable, size- and load-time-efficient format suitable for compilation to the web. It was designed to enable high-performance applications on web pages.
-\subsection{Technical Details}
-\begin{itemize}
-    \item \textbf{Binary Format:} Wasm uses a compact binary format that is fast to decode.
-    \item \textbf{Stack Machine:} It is defined as a virtual stack machine, unrelated to the physical machine architecture.
-    \item \textbf{Linear Memory:} Security is enforced through a linear memory model that prevents the code from accessing memory outside its sandbox.
-    \item \textbf{Isolation:} The host environment is completely isolated from the module unless imports are explicitly defined.
-\end{itemize}
-\subsection{Phase 1: Frontend and Browser Adoption}
-Initially, Wasm was used to port C/C++ applications (like game engines, video editors, and image processors) to the browser, allowing them to run at near-native speed alongside JavaScript.
-\subsection{Phase 2: Server-Side WebAssembly}
-The "Second Phase" of Wasm involves moving it out of the browser. This section explores why Wasm is ideal for the server side:
-\begin{itemize}
-    \item \textbf{Security:} Default sandboxing makes it safer for multi-tenant environments.
-    \item \textbf{Portability:} "Write once, run anywhere" (creating true universal binaries).
-    \item \textbf{Performance:} Near-instant startup times compared to booting a full container OS.
-\end{itemize}
-\subsection{WASI (WebAssembly System Interface)}
-A critical standard that allows Wasm modules to access system resources (files, network, clocks) in a standardized, secure way, enabling server-side execution.
 
-\section{Container Orchestration}
-\label{sec:orchestration}
-\subsection{Container Runtimes}
-Differentiation between high-level runtimes (Containerd, CRI-O) and low-level runtimes (runc, crun, gVisor).
-\section{Continuum Framework}
-\label{sec:continuum}
+\subsection{Origin and Technical Architecture}
+WebAssembly (Wasm) is a binary instruction format designed for a stack-based virtual machine. It originated from the need to execute high-performance code within web browsers—a domain historically constrained by JavaScript's inconsistent performance and parsing overhead. WebAssembly was officially released in 2017 as a W3C standard, sitting alongside HTML, CSS, and JavaScript as an official language of the web \cite{haas2017bringing}.
+
+Wasm functions as an agnostic hardware abstraction layer. Developers write code in systems languages like C, C++, or Rust, and compile it down to \texttt{.wasm} binaries. The architecture relies on several core principles:
+\begin{itemize}
+    \item \textbf{Compact Binary Format:} The \texttt{.wasm} format is highly optimized, allowing for rapid fetching, decoding, and execution.
+    \item \textbf{Hardware Agnosticism:} Because it utilizes a virtual stack machine, the compiled bytecode makes no assumptions about the underlying physical CPU architecture (x86\_64, ARM64), enabling true portability.
+    \item \textbf{Linear Memory:} Wasm operates in a contiguous, resizable array of bytes. Code executing within the Wasm module cannot execute arbitrary pointers or access memory outside this strictly enforced boundary.
+    \item \textbf{Capability-Based Security:} Wasm operates on a strict "deny-by-default" model. The host environment is entirely hidden. The module cannot access networks, the filesystem, or environment variables unless explicitly imported and granted by the host runtime.
+\end{itemize}
+
+\subsection{Language Agnosticism and the JVM Comparison}
+The concept of "Write Once, Run Anywhere" (WORA) was popularized by Java. Java achieves portability by compiling source code to Java bytecode, which is executed by the Java Virtual Machine (JVM). However, WebAssembly fundamentally differs from the JVM in design and scope. The JVM was built specifically to execute Java and inherently carries a heavyweight runtime featuring built-in garbage collection. Conversely, Wasm was designed as a low-level, truly language-agnostic compilation target without an opinionated runtime, making it exceptionally lightweight. 
+
+For languages requiring automatic memory management (like Go, Python, or PHP), Wasm historically required the entire language runtime and garbage collector to be compiled and bundled inside the \texttt{.wasm} binary. Ongoing developments, such as the WasmGC proposal, aim to delegate garbage collection to the host environment to mitigate this overhead.
+
+\subsection{The Server-Side Evolution: WASI}
+While Wasm successfully delivered near-native performance for computationally heavy browser applications, its portability, security model, and minimal footprint rapidly garnered interest for backend deployment. As Solomon Hykes, co-founder of Docker, noted, the existence of Wasm and WASI in 2008 would have negated the need to create Docker \cite{hykes2019tweet}.
+
+Because Wasm is entirely isolated by default, a bare Wasm module running on a server cannot open a network socket or read a file. In 2019, the WebAssembly System Interface (WASI) was introduced to solve this. WASI defines a standardized API specification that provides Wasm modules with secure, granular, capability-based access to the host operating system \cite{clark2019standardizing}. By acting as a POSIX-like layer, WASI transforms Wasm from a sandboxed browser calculator into a fully functional server-side technology.
+
+\subsection{Wasm vs. Traditional Containers}
+Applying Wasm and WASI to the server yields a deployment artifact that sits between a traditional VM and an OCI container, offering unique operational characteristics:
+
+\begin{enumerate}
+    \item \textbf{Cold Start and Footprint:} Traditional OCI containers bundle an OS userland, frequently resulting in image sizes exceeding 100MB and startup times measured in seconds. A Wasm module contains only the compiled application logic. Wasm binaries are typically just a few megabytes and can be instantiated by a host runtime in microseconds. Long et al. demonstrated that Wasm runtimes can perform at least 10x faster than Docker from a cold start for short-running workloads \cite{long2023wasm}. Hall and Ramachandran further verified that Wasm's improved cold start times lead to up to 90\% faster response times for basic serverless tasks \cite{hall2021serverless}.
+    \item \textbf{Security and Density:} Wasm utilizes Software-Based Fault Isolation (SFI). If a Wasm module is compromised, the attacker only controls the isolated linear memory sandbox. The minimal memory footprint of Wasm allows Kubernetes nodes to achieve exponentially higher workload density.
+    \item \textbf{Performance Trade-offs:} Despite its advantages in density and initialization, Wasm is structurally immature compared to Docker regarding concurrency. Wasm currently lacks standardized multithreading capabilities. Sondell (2024) demonstrated that in high-concurrency HTTP server scenarios, a Docker container can process requests significantly faster because it can scale across multiple CPU cores, whereas a single Wasm instance remains bottlenecked by single-threaded execution \cite{sondell2024performance}. Furthermore, Spies and Mock found that single-threaded Wasm apps perform approximately 14\% slower than native x86\_64 binaries \cite{spies2021evaluation}.
+\end{enumerate}
+
+By utilizing WASI shims, Kubernetes can now orchestrate these high-density Wasm workloads directly alongside traditional Docker containers, setting the stage for the comparative analysis executed in this research.
