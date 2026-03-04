@@ -64,10 +64,16 @@
 }{
 \LoadClass[a4paper,10pt,onecolumn,twoside,openright]{report}
 }
+% \ifthenelse{\boolean{cutmargins}}{
+% \RequirePackage[paperwidth=365pt,paperheight=618pt,textwidth=345pt,textheight=598pt,bindingoffset=0cm,marginparwidth=1.75cm,hmarginratio=1:1,vmarginratio=1:1]{geometry}
+% }{
+% \RequirePackage[a4paper,textwidth=345pt,textheight=598pt,bindingoffset=0cm,marginparwidth=3.75cm,hmarginratio=1:1,vmarginratio=1:1]{geometry}
+% }
+
 \ifthenelse{\boolean{cutmargins}}{
-\RequirePackage[paperwidth=365pt,paperheight=618pt,textwidth=345pt,textheight=598pt,bindingoffset=0cm,marginparwidth=3.75cm,hmarginratio=1:1,vmarginratio=1:1]{geometry}
+\RequirePackage[paperwidth=365pt,paperheight=618pt,textwidth=345pt,textheight=598pt,bindingoffset=0cm,marginparwidth=1.75cm,hmarginratio=1:1,vmarginratio=1:1]{geometry}
 }{
-\RequirePackage[a4paper,textwidth=345pt,textheight=598pt,bindingoffset=0cm,marginparwidth=3.75cm,hmarginratio=1:1,vmarginratio=1:1]{geometry}
+\RequirePackage[a4paper, inner=2.5cm, outer=2.5cm, bindingoffset=1.2cm, top=3cm, bottom=3cm, marginparwidth=3.75cm]{geometry}
 }
 
 % 150 percent line spacing
@@ -905,10 +911,8 @@
 {\Large\noindent%
 Erklärung \newline}
 
-\noindent\nohyphens{%
-Ich versichere, dass ich alle bewertungsrelevanten Beiträge dieser Arbeit ohne Hilfe anderer Personen und Werkzeuge erbracht habe oder diese Beiträge klar und unmissverständlich im Text gekennzeichnet habe (etwa durch Zitate).
-Diese Arbeit wurde in gleicher oder ähnlicher Form keiner anderen Prüfungsbehörde vorgelegt.
-Sollte ich mehrere Kopien dieser Arbeit zur Bewertung abgeben, so ist deren Inhalt identisch.
+\noindent\raggedright{%
+Ich versichere, dass ich alle bewertungsrelevanten Beiträge dieser Arbeit ohne Hilfe anderer Personen und Werkzeuge erbracht habe oder diese Beiträge klar und unmissverständlich im Text gekennzeichnet habe (etwa durch Zitate). Diese Arbeit wurde in gleicher oder ähnlicher Form keiner anderen Prüfungsbehörde vorgelegt. Sollte ich mehrere Kopien dieser Arbeit zur Bewertung abgeben, so ist deren Inhalt identisch.
 }\end{otherlanguage*}
 
 
@@ -919,10 +923,8 @@ Sollte ich mehrere Kopien dieser Arbeit zur Bewertung abgeben, so ist deren Inha
 {\Large\noindent%
 Declaration \newline}
 
-\noindent\nohyphens{%
-I declare that I have achieved all grading-relevant contributions to this work without the help of other persons or tools, or that I have clearly and unmistakably identified such contributions in the text (e.g., by citations).
-This work has not been submitted in the same or a similar form to any other examination body.
-Should I submit multiple copies of this work for grading, their content is identical. 
+\noindent\raggedright{%
+I declare that I have achieved all grading-relevant contributions to this work without the help of other persons or tools, or that I have clearly and unmistakably identified such contributions in the text (e.g., by citations). This work has not been submitted in the same or a similar form to any other examination body. Should I submit multiple copies of this work for grading, their content is identical. 
 }\end{otherlanguage*}
 
 
