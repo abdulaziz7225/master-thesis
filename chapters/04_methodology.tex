@@ -1,24 +1,121 @@
 \chapter{Research Methodology}
 \label{chap:methodology}
 
-\section{Research Strategy: Comparative Analysis}
-This thesis employs a quantitative comparative analysis (A/B testing) to evaluate the suitability of Wasm/Rust against Docker/Golang.
+This chapter describes the research strategy employed to compare \acs{Wasm} and Docker-based microservice deployments, justifies the selection of the four implementation variants, defines the benchmark workload, and specifies the five measurement metrics used throughout the evaluation.
+
+\section{Research Strategy}
+\label{sec:research_strategy}
+
+This thesis employs a \textit{mixed-methods} approach combining a quantitative controlled experiment as the primary method with a qualitative developer experience assessment as the secondary method.
+
+The quantitative experiment follows a 2$\times$2 variant matrix: runtime (Docker/\texttt{runc} vs.\ \acs{Wasm}/\acs{WasmEdge}) crossed with language family (Rust vs.\ Go-family). This produces four implementation variants that are deployed to an isolated, reproducible cloud environment and subjected to identical load testing and startup-time measurements. All four variants implement the same \acs{HTTP} \acs{API} and the same core algorithm, ensuring that any performance difference is attributable to the execution environment rather than to differences in application logic.
+
+An important design choice is that this study does \textit{not} attempt to isolate the pure runtime overhead by holding the language constant across all four variants. Instead, it deliberately compares the two dominant paradigms in their \textit{native} technological contexts: Docker with Go (the industry standard), Docker with Rust (a deconfounding baseline), and \acs{Wasm} with Rust and TinyGo (the \acs{Wasm}-native ecosystem). This design reflects the real-world decision an engineering team faces when evaluating a migration from Docker to \acs{Wasm}, while the Rust-on-Docker baseline enables partial deconfounding of the language variable (see Section~\ref{sec:tech_selection}).
+
+\textbf{Threats to validity:} The single-node cluster limits horizontal scaling analysis. The shared-hardware Hetzner \acs{VM} introduces potential noisy-neighbour effects on absolute metric values. The benchmark suite consists of one workload type at the time of writing (CPU-bound prime sieve); generalisation to I/O-bound and mixed workloads awaits future experiments.
 
 \section{Selection of Technologies}
 \label{sec:tech_selection}
-\subsection{The Baseline: Docker + Golang}
-Justification for choosing Golang (FastAPI/Flask) as the baseline: it represents the industry standard for rapid development but suffers from high memory usage and slow startup (the "Garbage Collection" penalty).
-\subsection{The Challenger: WebAssembly + Rust}
-Justification for Rust: it provides the smallest Wasm binary sizes and lacks a garbage collector, maximizing the potential benefits of the Wasm runtime.
-\subsection{Orchestration: Kubernetes with RuntimeClass}
-Description of the hybrid cluster setup where both artifacts will run side-by-side.
+
+\subsection{Docker/Golang: The Industry Baseline}
+
+The Docker/Golang variant serves as the primary baseline against which all other variants are measured. Go is the dominant language for cloud-native infrastructure tooling: \acs{K8s}, Docker, Terraform, Prometheus, and Grafana are all implemented in Go. Its goroutine-based concurrency model and the \texttt{net/http} standard library make it the idiomatic choice for \acs{HTTP} microservices. Go also represents the fastest garbage-collected language available at production scale, making it a strong baseline for evaluating whether \acs{Wasm}'s elimination of garbage collection overhead provides a meaningful performance advantage.
+
+\subsection{Docker/Rust: The Deconfounding Baseline}
+
+A second Docker-based baseline using Rust is included specifically to enable a language-controlled comparison. Because both docker-rust and wasm-rust use the same language, the performance delta between these two variants isolates (approximately) the overhead introduced by the \acs{WasmEdge} runtime, \acs{SFI} bounds-checking, and the \acs{WASI}~P1 single-threaded I/O constraint, independent of language-level differences such as memory management strategy.
+
+Rust's axum/Tokio async stack provides full multi-threaded, asynchronous I/O---the maximum performance achievable on the Docker/\texttt{runc} path---making the docker-rust variant also a useful upper-bound reference for the \acs{Wasm} variants.
+
+\subsection{Wasm/Rust: The Primary Experimental Variant}
+
+\acs{Wasm} supports more than 40 programming languages as compilation targets~\cite{fermyon2024langmatrix}. Rust was selected as the primary \acs{Wasm} experimental language for three reasons. First, Rust provides first-class, officially supported \texttt{wasm32-wasip1} and \texttt{wasm32-wasip2} targets maintained by the Rust core team; the \texttt{wasm32-wasip1} target has been Tier~2 stable since Rust~1.78. Second, Rust produces the smallest \acs{Wasm} binaries among systems languages because it has no garbage collector, no language runtime, and no \acs{OS} abstraction layer bundled into the binary. Third, the \texttt{crates.io} ecosystem has the most mature \acs{WASI}~P1 library support of any language targeting \acs{Wasm}, despite the significant ecosystem gaps documented below.
+
+A critical constraint surfaced during implementation: no maintained asynchronous \acs{HTTP} framework exists for \texttt{wasm32-wasip1}. The evaluation of candidate crates proceeded as follows:
+
+\begin{enumerate}
+    \item \texttt{hyper\_wasi} --- A \acs{WasmEdge}-specific fork of the \texttt{hyper} \acs{HTTP} library. Unmaintained since 2022; fails to compile against Rust $\geq$1.80 on \texttt{wasm32-wasip1}.
+    \item \texttt{tokio\_wasi} --- A \acs{WasmEdge}-specific fork of the Tokio async runtime. Unmaintained; same compilation failure.
+    \item \texttt{std::net::TcpListener::bind("0.0.0.0:8080")} --- The standard library \acs{TCP} socket \acs{API}. Returns \texttt{Err("Unsupported")} at runtime on \texttt{wasm32-wasip1}; \acs{WASI}~P1 does not expose \acs{POSIX} socket primitives natively.
+    \item \texttt{wasmedge\_wasi\_socket~0.5.5}~\cite{wasmedgewasisocket} --- A \acs{WasmEdge}-specific crate providing synchronous \acs{TCP} socket primitives via \acs{WasmEdge} host function extensions. \textbf{This is the only viable path}, resulting in a single-threaded, synchronous \texttt{accept()}-handle-respond loop with no concurrency within the process.
+\end{enumerate}
+
+This is a \acs{WASI}~P1 architectural constraint, not a limitation of Rust. \acs{WASI}~P2's \texttt{wasi:http} world directly resolves this by providing a fully asynchronous \acs{HTTP} handler interface, and is discussed as future work in \hyperref[chap:discussion]{Chapter~\ref{chap:discussion}}.
+
+\subsection{Wasm/TinyGo: The Secondary Experimental Variant}
+
+TinyGo~\cite{tinygo2024} is a Go-compatible compiler optimised for embedded systems and \acs{Wasm} targets. It was selected to enable a partial Go-to-Go comparison with the docker-golang baseline, testing whether the concurrency disadvantage observed in wasm-rust (single-threaded \acs{WASI}~P1 I/O) also manifests in a Go-family \acs{Wasm} implementation.
+
+Standard Go supports \texttt{GOOS=wasip1} since Go~1.21~\cite{goblogwasi2024}, but produces significantly larger \acs{Wasm} binaries because it bundles the full Go runtime (scheduler, garbage collector, and \acs{POSIX} abstraction layer). TinyGo is designed specifically for \acs{Wasm}/embedded targets and produces substantially smaller binaries by using a stripped-down runtime. TinyGo 0.40.1 was pinned for this experiment.
+
+A critical constraint also applies to TinyGo: the \texttt{net/http} server stack was broken on \texttt{wasip1} beginning with TinyGo~0.28, due to a Netdev architecture refactor that permanently disabled the server-side code path. The solution adopted is a custom \texttt{server.go} file that calls \acs{WasmEdge} host socket functions directly via Go's \texttt{//go:wasmimport} directive, bypassing the broken \texttt{net/http} layer entirely. The \texttt{-gc=conservative} build flag is required to keep heap objects pinned and prevent the conservative GC from moving memory that is referenced by unsafe pointers in the \acs{WasmEdge} socket \acs{ABI}.
+
+\subsection{Orchestration: K3s with RuntimeClass}
+
+K3s~\cite{k3s2024rancher} v1.35.2+k3s1, a lightweight \acs{K8s} distribution developed by \acs{SUSE} Rancher, was chosen as the orchestration layer. K3s reduces the memory footprint of the \acs{K8s} control plane significantly compared to a full \acs{K8s} deployment, which is important given the 8\,GB \acs{RAM} constraint of the benchmark \acs{VM}. K3s uses containerd as its \acs{CRI}, which is necessary for the \texttt{RuntimeClass}/\acs{WasmEdge} integration.
+
+The \acs{Wasm} \texttt{RuntimeClass} routes pods with \texttt{runtimeClassName: wasmedge} to crun~v1.22 (compiled from source with the \texttt{--with-wasmedge} flag), which in turn invokes \acs{WasmEdge}~0.14.1 to execute the \texttt{.wasm} binary. Docker pods use the default \texttt{runc} path unchanged. This hybrid configuration allows both paradigms to run side-by-side with directly comparable \acs{K8s} resource management.
+
+\section{Benchmark Workload Design}
+\label{sec:workload_design}
+
+\subsection{Sieve of Eratosthenes as the Compute Benchmark}
+
+The first benchmark workload is a stateless \acs{HTTP} service that computes prime numbers using the Sieve of Eratosthenes algorithm. The sieve was selected as the opening benchmark for several reasons. It is purely \acs{CPU}-bound with no external I/O, database calls, or file system access, isolating compute performance from I/O stack differences between the variants. Its $O(N \log \log N)$ time complexity produces a predictable, parametrically controllable workload: the upper bound $N$ can be adjusted to modulate per-request computation time precisely. The algorithm is deterministic and trivially re-implementable in any language, ensuring that all four variants compute identical results using the same algorithmic logic.
+
+The \acs{HTTP} \acs{API} contract is identical across all four variants:
+
+\begin{verbatim}
+GET /prime?limit=N&no_list=1
+\end{verbatim}
+
+The response is a \acs{JSON} object:
+\begin{verbatim}
+{"runtime":"<variant>","limit":N,"count":K,"elapsed_us":T}
+\end{verbatim}
+
+The \texttt{no\_list=1} parameter suppresses the array of computed primes from the response body, eliminating \acs{JSON} serialization overhead as a confounding variable when measuring throughput. The \texttt{elapsed\_us} field records the server-side wall-clock time of the sieve computation in microseconds, providing a direct measurement of per-request algorithmic cost independent of network and queuing latency.
+
+Table~\ref{tab:variant_summary} summarizes the four implementation variants.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Summary of the four benchmark variants.}
+    \label{tab:variant_summary}
+    \begin{tabular}{llllll}
+        \hline
+        \textbf{Variant} & \textbf{Language} & \textbf{Runtime} & \textbf{Framework} & \textbf{I/O Model} & \textbf{Image} \\
+        \hline
+        docker-golang & Go~1.26       & runc          & \texttt{net/http}           & Goroutines (M:N)     & 6.00\,MB \\
+        docker-rust   & Rust~1.94     & runc          & axum + Tokio                & Async (multi-thread) & 2.08\,MB \\
+        wasm-rust     & Rust~1.94     & \acs{WasmEdge}~0.14.1 & \texttt{wasmedge\_wasi\_socket} & Sync (single-thread) & 0.13\,MB \\
+        wasm-tinygo   & TinyGo~0.40.1 & \acs{WasmEdge}~0.14.1 & \texttt{go:wasmimport} sockets & Sync (single-thread) & 2.26\,MB \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Planned Future Workloads}
+
+The prime sieve provides a controlled, \acs{CPU}-intensive baseline. Two additional workloads are planned as extensions of this research:
+
+\begin{itemize}
+    \item \textbf{I/O-Bound Workload:} A service that performs sustained file system or network I/O operations, testing whether the I/O capability constraints of \acs{WASI}~P1 (no epoll, no async I/O) impose additional performance penalties beyond those observed in the \acs{CPU}-bound case.
+    \item \textbf{Volta Financial Risk Engine:} A distributed multi-service application implementing a Monte Carlo simulation for Value at Risk (\acs{VaR}) calculations on trading portfolios. Volta consists of multiple communicating microservices, stress-testing \acs{Wasm}'s suitability for realistic, stateful, inter-service architectures of the type that dominate modern cloud deployments.
+\end{itemize}
 
 \section{Definition of Metrics}
 \label{sec:metrics}
-\begin{itemize}
-    \item \textbf{Startup Latency (Cold Start):} Time from `kubectl scale` to the first HTTP 200 OK response.
-    \item \textbf{Memory Footprint:} RSS (Resident Set Size) memory usage at idle and under load.
-    \item \textbf{Artifact Size:} Comparison of the OCI image size (Golang slim layers) vs. the Wasm module size.
-    \item \textbf{Throughput & Latency:} Requests Per Second (RPS) and P99 latency under sustained load (using tools like K6 or Hey).
-    \item \textbf{Maintainability (Qualitative):} Assessment of the "Inner Development Loop," debugging difficulty, and CI/CD complexity.
-\end{itemize}
+
+Five metrics are measured across all variants. The first four are quantitative; the fifth is qualitative.
+
+\begin{enumerate}
+    \item \textbf{Startup Latency (Cold and Warm Start).} Time elapsed from \texttt{kubectl scale --replicas=0} followed by \texttt{kubectl scale --replicas=1} until the service returns the first \acs{HTTP}~200 response, measured by a polling script. Six measurement runs are performed per variant. Run~1 constitutes the \textit{cold start}: the node has no cached image layer, so the \acs{OCI} image is pulled from the registry before the pod can start. Runs~2--6 constitute \textit{warm starts}: the image is already cached on the node, so pod startup reflects only container/\acs{Wasm} runtime initialisation time. Statistics (mean, median, standard deviation) are reported separately for cold and warm starts. Units: milliseconds.
+
+    \item \textbf{Memory Footprint.} Resident Set Size (\acs{RSS}) as reported by Prometheus~\cite{prometheus2024cncf} via the \texttt{container\_memory\_rss} metric, collected at two operating points: \textit{idle} (pod running for 60\,s with no incoming requests) and \textit{peak} (maximum \acs{RSS} observed during the k6 load test window). Scrape interval: 5\,s. Units: megabytes.
+
+    \item \textbf{OCI Artifact Size.} The on-disk size of the \acs{OCI} image as reported by \texttt{docker~inspect}. This metric directly impacts image pull latency, registry storage costs, and cold-start time when images are not cached. Units: megabytes.
+
+    \item \textbf{Throughput and Latency Under Load.} Load testing is performed with k6~\cite{k6io2024grafana} using a ramping-\acs{VU} executor: 1~\acs{VU} ramps linearly to 50~\acp{VU} over 20\,s, holds at 50~\acp{VU} for 60\,s, then ramps down to 0 over 10\,s. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: requests per second (\acs{RPS}), \acs{HTTP} request failure rate (fraction of non-2xx responses), p50/p95/p99 end-to-end latency, and the custom \texttt{server\_compute\_us} metric extracted from the \acs{JSON} response body to measure server-side algorithm time independently of network and queuing effects.
+
+    \item \textbf{Developer Experience (Qualitative).} A structured narrative assessment of the engineering effort required to build, test, and deploy each variant. Four dimensions are evaluated using a four-point friction scale (Low / Medium / High / Very~High): (a) toolchain setup and installation, (b) dependency compatibility under \acs{WASI}~P1, (c) \acs{K8s} cluster integration complexity, and (d) debugging and observability capability. This assessment is presented in \hyperref[chap:evaluation]{Chapter~\ref{chap:evaluation}} and directly addresses \acs{RQ4}.
+\end{enumerate}
