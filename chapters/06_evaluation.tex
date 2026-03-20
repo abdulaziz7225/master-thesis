@@ -52,7 +52,7 @@ Table~\ref{tab:image_sizes} reports the on-disk \acs{OCI} image size for each va
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/image_size.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/image_size.png}
     \caption{OCI artifact sizes across all four variants. The wasm-rust variant is 46$\times$ smaller than docker-golang.}
     \label{fig:image_size}
 \end{figure}
@@ -90,7 +90,7 @@ The cold-start measurement (Run~1) captures the full time from pod scheduled to 
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/cold_start.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/cold_start.png}
     \caption{Cold-start latency (single measurement per variant). The docker-golang outlier is dominated by its 6\,MB image pull time.}
     \label{fig:cold_start}
 \end{figure}
@@ -121,7 +121,7 @@ Warm-start measurements (Runs~2--6) capture pod startup with the \acs{OCI} image
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/warm_start.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/warm_start.png}
     \caption{Warm-start latency across five runs per variant (image cached). Note the outliers in wasm-rust (Run~4) and the consistently elevated docker-golang times.}
     \label{fig:warm_start}
 \end{figure}
@@ -157,28 +157,28 @@ Figures~\ref{fig:throughput},~\ref{fig:rps_over_time},~\ref{fig:latency}, and~\r
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/throughput.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/throughput.png}
     \caption{Total successful requests per variant during the 60\,s hold phase. Docker variants handle orders of magnitude more requests than the single-threaded Wasm variants.}
     \label{fig:throughput}
 \end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/rps_over_time.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/rps_over_time.png}
     \caption{Requests per second over the full k6 run. The Docker variants scale with VU ramp-up; the Wasm variants flatten immediately at their single-threaded saturation ceiling.}
     \label{fig:rps_over_time}
 \end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/latency.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/latency.png}
     \caption{End-to-end latency distribution (p50, p95, p99) per variant.}
     \label{fig:latency}
 \end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/error_rate.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/error_rate.png}
     \caption{HTTP failure rate per variant under 50 concurrent VUs.}
     \label{fig:error_rate}
 \end{figure}
@@ -236,14 +236,14 @@ Memory \acl{RSS} was collected from the Prometheus \texttt{container\_memory\_rs
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/memory.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/memory.png}
     \caption{Memory RSS (idle and peak) per variant. wasm-tinygo idle value was not captured by Prometheus (marked as missing).}
     \label{fig:memory}
 \end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.85\textwidth]{figures/cpu.png}
+    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/cpu.png}
     \caption{Average CPU utilisation during the 60\,s k6 hold phase (millicores). Wasm variants consume fewer CPU resources primarily because they process fewer requests.}
     \label{fig:cpu}
 \end{figure}
