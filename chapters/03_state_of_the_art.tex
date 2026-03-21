@@ -147,4 +147,13 @@ Several higher-level operators have been developed to simplify the operational e
 
 The \acs{K8s} \texttt{RuntimeClass} \acs{API} is the key mechanism that enables \acs{Wasm} and Docker workloads to coexist in the same cluster. A \texttt{RuntimeClass} object maps a handler name (e.g., \texttt{wasmedge}) to a registered containerd runtime plugin. When a pod specifies \texttt{spec.runtimeClassName: wasmedge}, the kubelet instructs containerd to use the registered \acs{WasmEdge} handler rather than the default \texttt{runc} path.
 
-This mechanism allows the benchmark deployments in this thesis to use structurally identical \texttt{Deployment} manifests for both \acs{Wasm} and Docker variants---the only differences being the \texttt{runtimeClassName} field and two \acs{OCI} annotations (\texttt{run.oci.handler: wasmedge} and \texttt{module.wasm.image/variant: compat}). The complete \acs{K8s} configuration is detailed in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
+This mechanism allows the benchmark deployments in this thesis to use
+structurally identical \texttt{Deployment} manifests for both \acs{Wasm}
+and Docker variants---the only differences being the
+\texttt{runtime\-Class\-Name} field and two \acs{OCI} annotations:
+\begin{itemize}
+  \item \texttt{run.oci.handler: wasmedge}
+  \item \texttt{module.wasm.image/variant: compat}
+\end{itemize}
+\noindent The complete \acs{K8s} configuration is detailed in
+\hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
