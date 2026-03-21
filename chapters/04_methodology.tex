@@ -82,6 +82,7 @@ Table~\ref{tab:variant_summary} summarizes the four implementation variants.
     \centering
     \caption{Summary of the four benchmark variants.}
     \label{tab:variant_summary}
+    \adjustbox{max width=\linewidth}{%
     \begin{tabular}{llllll}
         \hline
         \textbf{Variant} & \textbf{Language} & \textbf{Runtime} & \textbf{Framework} & \textbf{I/O Model} & \textbf{Image} \\
@@ -91,7 +92,7 @@ Table~\ref{tab:variant_summary} summarizes the four implementation variants.
         wasm-rust     & Rust~1.94     & \acs{WasmEdge}~0.14.1 & \texttt{wasmedge\_wasi\_socket} & Sync (single-thread) & 0.13\,MB \\
         wasm-tinygo   & TinyGo~0.40.1 & \acs{WasmEdge}~0.14.1 & \texttt{go:wasmimport} sockets & Sync (single-thread) & 2.26\,MB \\
         \hline
-    \end{tabular}
+    \end{tabular}}
 \end{table}
 
 \subsection{Planned Future Workloads}

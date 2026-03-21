@@ -85,6 +85,7 @@ The server-side \acs{Wasm} ecosystem includes several runtimes with distinct des
     \centering
     \caption{Comparative overview of major \acs{Wasm} runtimes considered for this thesis.}
     \label{tab:wasm_runtimes}
+    \adjustbox{max width=\linewidth}{%
     \begin{tabular}{llllll}
         \hline
         \textbf{Runtime} & \textbf{Backend} & \textbf{\acs{WASI}~P1} & \textbf{\acs{WASI}~P2} & \textbf{\acs{K8s} Shim} & \textbf{Primary Use Case} \\
@@ -95,7 +96,7 @@ The server-side \acs{Wasm} ecosystem includes several runtimes with distinct des
         WAMR       & AOT/JIT/Interp & \checkmark & Partial  & ---            & Embedded, IoT \\
         wazero     & Go native    & \checkmark & ---        & ---            & Go embedding \\
         \hline
-    \end{tabular}
+    \end{tabular}}
 \end{table}
 
 \textbf{Wasmtime} is the Bytecode Alliance's reference runtime, backed by the Cranelift code generator. It has the most complete \acs{WASI}~P2 support of any runtime and is the foundation for Fastly Compute. Its \texttt{runwasi} containerd shim enables \acs{K8s} \texttt{RuntimeClass} integration.

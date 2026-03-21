@@ -265,6 +265,7 @@ This section provides the qualitative assessment of the engineering effort requi
     \centering
     \caption{Developer experience friction assessment per variant and dimension.}
     \label{tab:dx_assessment}
+    \adjustbox{max width=\linewidth}{%
     \begin{tabular}{lllll}
         \hline
         \textbf{Dimension}            & \textbf{docker-golang} & \textbf{docker-rust} & \textbf{wasm-rust} & \textbf{wasm-tinygo} \\
@@ -274,7 +275,7 @@ This section provides the qualitative assessment of the engineering effort requi
         K8s cluster integration       & Low    & Low        & High      & High      \\
         Debugging and observability   & Low    & Low        & High      & High      \\
         \hline
-    \end{tabular}
+    \end{tabular}}
 \end{table}
 
 \subsection{Toolchain Setup}
@@ -308,6 +309,7 @@ Table~\ref{tab:summary_findings} consolidates the quantitative results across al
     \centering
     \caption{Consolidated benchmark results for the prime sieve workload.}
     \label{tab:summary_findings}
+    \adjustbox{max width=\linewidth}{%
     \begin{tabular}{lrrrr}
         \hline
         \textbf{Metric} & \textbf{docker-golang} & \textbf{docker-rust} & \textbf{wasm-rust} & \textbf{wasm-tinygo} \\
@@ -320,7 +322,7 @@ Table~\ref{tab:summary_findings} consolidates the quantitative results across al
         Idle RSS (MB)          & 13.63 & 2.02 & 4.38 & --- \\
         Peak RSS (MB)          & 13.63 & 2.26 & 4.40 & 34.92 \\
         \hline
-    \end{tabular}
+    \end{tabular}}
 \end{table}
 
 The results reveal a clear trade-off. \acs{Wasm} variants---specifically wasm-rust---offer compelling size and cold-start advantages (0.13\,MB image, 42\,ms warm start, 4.40\,MB peak \acs{RSS}) that are directly relevant to high-density, serverless, and autoscaling workloads. However, \acs{WASI} P1's single-threaded I/O model combined with \acs{WasmEdge}'s \acs{JIT} overhead for array-intensive computation renders the Wasm variants uncompetitive for the high-concurrency microservice scenario tested here: 24\,\acs{RPS} with a 67\% failure rate versus 510\,\acs{RPS} with zero failures for docker-golang.
