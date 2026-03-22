@@ -21,9 +21,9 @@ A dedicated Hetzner Cloud \acs{VM} provides a single-purpose environment with no
 
 \subsection{Hardware and Kubernetes Distribution}
 
-The benchmark cluster runs on a Hetzner Cloud ccx13 instance~\cite{hetzner2024cloud}: 2 dedicated \acs{AMD} EPYC vCPUs, 8\,GB \acs{RAM}, 80\,GB NVMe \acs{SSD}, Ubuntu~24.04~LTS, Nuremberg~(nbg1) datacenter. The entire server provisioning is defined in Terraform and executed with a single \texttt{make up} command.
+The benchmark cluster runs on a Hetzner Cloud ccx13 instance~\cite{hetzner2024cloud}. Hetzner Online GmbH is a German cloud and hosting provider offering cost-efficient dedicated and shared virtual machines in European data centers; the ccx13 is a shared-\acs{CPU} instance type with two dedicated \acs{AMD} EPYC vCPUs, 8\,GB \acs{RAM}, 80\,GB NVMe \acs{SSD}, running Ubuntu~24.04~LTS in the Nuremberg~(nbg1) datacenter. The entire server provisioning is defined in Terraform~\cite{terraform2024hashicorp}---an open-source \acl{IaC} tool that declaratively manages cloud resources---and executed with a single \texttt{make up} command.
 
-K3s~v1.35.2+k3s1~\cite{k3s2024rancher} is installed as the \acs{K8s} distribution. K3s was chosen over full \acs{K8s} because its lighter control-plane footprint ($\sim$600\,MB \acs{RAM}) leaves more headroom on the 8\,GB \acs{VM} for application pods and the Prometheus monitoring stack. The embedded Traefik ingress controller is disabled; services are exposed directly via NodePort for benchmark access. containerd is used as the \acs{CRI}.
+K3s~v1.35.2+k3s1~\cite{k3s2024rancher} is installed as the \acs{K8s} distribution. K3s was chosen over full \acs{K8s} because its lighter control-plane footprint ($\sim$600\,MB \acs{RAM}) leaves more headroom on the 8\,GB \acs{VM} for application pods and the Prometheus monitoring stack. The embedded Traefik ingress controller is disabled; services are exposed directly via NodePort for benchmark access. containerd is used as the \ac{CRI}---the standardized interface through which the kubelet communicates with the container runtime to manage pod lifecycles.
 
 \subsection{The WasmEdge Runtime Chain}
 
@@ -42,6 +42,8 @@ The key components in this chain are:
 \end{itemize}
 
 \subsection{Observability Stack}
+
+Observability refers to the ability to infer the internal state of a system from its external outputs---primarily metrics, logs, and traces. In this experimental context, observability is required to collect the quantitative performance metrics defined in Chapter~\ref{chap:methodology} (memory, \acs{CPU}, request latency, and throughput) from all four variants simultaneously and under identical conditions.
 
 The \texttt{kube-prometheus-stack} Helm chart is deployed into the \texttt{observability} namespace, providing Prometheus~\cite{prometheus2024cncf} (NodePort~32090, 5\,s scrape interval, 7-day retention, 10\,Gi \acs{PVC}) and Grafana (NodePort~32000). A 5-second scrape interval was chosen to capture sub-second metric resolution during the 60-second k6 load window. Node Exporter provides host-level \acs{CPU} and memory metrics; the \texttt{cAdvisor} integration in containerd exposes per-container \texttt{container\_memory\_rss} and \texttt{container\_cpu\_usage\_seconds\_total} metrics.
 
@@ -139,7 +141,7 @@ The binary is compiled with:
 \begin{verbatim}
 tinygo build -target=wasi -gc=conservative -opt=2 -o app.wasm .
 \end{verbatim}
-The resulting image is \textbf{2.26\,MB}---slightly larger than docker-rust despite targeting \acs{Wasm}---because TinyGo bundles its own minimal Go runtime (scheduler stub, conservative GC, standard library subset) inside the \texttt{.wasm} binary.
+The resulting image is \textbf{2.26\,MB}---slightly larger than docker-rust despite targeting \acs{Wasm}---because TinyGo bundles its own minimal Go runtime (scheduler stub, conservative \acs{GC}, standard library subset) inside the \texttt{.wasm} binary.
 
 \section{Kubernetes Deployment Configuration}
 \label{sec:k8s_deployment}
@@ -148,15 +150,17 @@ All four variants are deployed into the \texttt{prime-sieve} namespace. Each var
 
 \textbf{Docker variants} use standard \texttt{Deployment} manifests with no \texttt{runtimeClassName}; containerd routes these pods through the default \texttt{runc} path.
 
-\textbf{Wasm variants} require three additional fields. The pod \texttt{spec} sets \texttt{runtimeClassName: wasmedge}. The pod \texttt{metadata.annotations} include \texttt{run.oci.handler: wasmedge} and \texttt{module.wasm.image/variant: compat}. The container \texttt{command} is set to \texttt{["/app.wasm"]}. These annotations are forwarded by containerd to crun, which uses them to detect and delegate execution to \acs{WasmEdge} rather than attempting to execute the binary as a Linux ELF executable.
+\textbf{Wasm variants} require three additional fields. The pod \texttt{spec} sets \texttt{runtimeClassName: wasmedge}. The pod \texttt{metadata.annotations} include \texttt{run.oci.handler: wasmedge} and \texttt{module.wasm.image/variant: compat}. The container \texttt{command} is set to \texttt{["/app.wasm"]}. These annotations are forwarded by containerd to crun, which uses them to detect and delegate execution to \acs{WasmEdge} rather than attempting to execute the binary as a Linux \acs{ELF} executable.
 
-Liveness and readiness probes execute \texttt{GET /health} with a 30-second initial delay to allow \acs{WasmEdge}'s \acs{JIT} compilation to complete before the pod is declared ready. No \acs{CPU} or memory resource limits are set on any variant, to prevent \acs{K8s} throttling from introducing artificial performance gaps.
+Each variant's \texttt{Deployment} specifies identical resource requests and limits to ensure a level playing field: \texttt{requests} of 250m \acs{CPU} and 64\,MiB memory, and \texttt{limits} of 1000m \acs{CPU} (1 vCPU) and 512\,MiB memory. Setting a uniform \acs{CPU} limit ensures that no variant can monopolize the shared 2-vCPU host. An important runtime consideration applies to the Docker variants: by default, Go's runtime sets \texttt{GOMAXPROCS} equal to the number of \textit{visible} host \acs{CPU} cores (2), not the container's \acs{CPU} limit. Similarly, Tokio's multi-threaded executor spawns one worker thread per visible core. Both runtimes therefore observe 2 cores despite the 1-vCPU limit, which the kernel enforces via \acs{CPU} bandwidth throttling. This is documented as a known measurement constraint; future work should explicitly set \texttt{GOMAXPROCS=1} and \texttt{TOKIO\_WORKER\_THREADS=1} to fully eliminate this variable.
+
+Liveness and readiness probes execute \texttt{GET /health} with a 30-second initial delay to allow \acs{WasmEdge}'s \acs{JIT} compilation to complete before the pod is declared ready.
 
 Table~\ref{tab:nodePorts} shows the NodePort assignments used for direct benchmark access.
 
 \begin{table}[htbp]
     \centering
-    \caption{NodePort assignments for direct k6 load generator access.}
+    \caption{NodePort assignments for direct k6 load generator access}
     \label{tab:nodePorts}
     \begin{tabular}{lll}
         \hline
