@@ -1,18 +1,16 @@
 \chapter{Research Methodology}
 \label{chap:methodology}
 
-This chapter describes the research strategy employed to compare \acs{Wasm} and Docker-based microservice deployments, justifies the selection of the four implementation variants, defines the benchmark workload, and specifies the five measurement metrics used throughout the evaluation.
+This chapter describes the research strategy employed to compare \acs{Wasm} and Docker-based microservice deployments, justifies the selection of the four implementation variants, defines the benchmark workloads, and specifies the five measurement metrics used throughout the evaluation.
 
 \section{Research Strategy}
 \label{sec:research_strategy}
 
 This thesis employs a \textit{mixed-methods} approach combining a quantitative controlled experiment as the primary method with a qualitative developer experience assessment as the secondary method.
 
-The quantitative experiment follows a 2$\times$2 variant matrix: runtime (Docker/\texttt{runc} vs.\ \acs{Wasm}/\acs{WasmEdge}) crossed with language family (Rust vs.\ Go-family). This produces four implementation variants that are deployed to an isolated, reproducible cloud environment and subjected to identical load testing and startup-time measurements. All four variants implement the same \acs{HTTP} \acs{API} and the same core algorithm, ensuring that any performance difference is attributable to the execution environment rather than to differences in application logic.
+The quantitative experiment follows a 2$\times$2 variant matrix: runtime (Docker/\texttt{runc} vs.\ \acs{Wasm}/\acs{WasmEdge}) crossed with language family (Rust vs.\ Go-family). This produces four implementation variants that are deployed to an isolated, reproducible cloud environment and subjected to identical load testing and startup-time measurements. All four variants implement the same \acs{HTTP} \acs{API} and the same core algorithm, ensuring that any performance difference is attributable to the execution environment rather than to differences in application logic. This 2$\times$2 matrix is applied to each benchmark workload, meaning the same four variants are evaluated across all workloads defined in Section~\ref{sec:workload_design}.
 
 An important design choice is that this study does \textit{not} attempt to isolate the pure runtime overhead by holding the language constant across all four variants. Instead, it deliberately compares the two dominant paradigms in their \textit{native} technological contexts: Docker with Go (the industry standard), Docker with Rust (a deconfounding baseline), and \acs{Wasm} with Rust and TinyGo (the \acs{Wasm}-native ecosystem). This design reflects the real-world decision an engineering team faces when evaluating a migration from Docker to \acs{Wasm}, while the Rust-on-Docker baseline enables partial deconfounding of the language variable (see Section~\ref{sec:tech_selection}).
-
-\textbf{Threats to validity:} The single-node cluster limits horizontal scaling analysis. The shared-hardware Hetzner \acs{VM} introduces potential noisy-neighbour effects on absolute metric values. The benchmark suite consists of one workload type at the time of writing (CPU-bound prime sieve); generalisation to I/O-bound and mixed workloads awaits future experiments.
 
 \section{Selection of Technologies}
 \label{sec:tech_selection}
@@ -48,7 +46,7 @@ TinyGo~\cite{tinygo2024} is a Go-compatible compiler optimised for embedded syst
 
 Standard Go supports \texttt{GOOS=wasip1} since Go~1.21~\cite{goblogwasi2024}, but produces significantly larger \acs{Wasm} binaries because it bundles the full Go runtime (scheduler, garbage collector, and \acs{POSIX} abstraction layer). TinyGo is designed specifically for \acs{Wasm}/embedded targets and produces substantially smaller binaries by using a stripped-down runtime. TinyGo 0.40.1 was pinned for this experiment.
 
-A critical constraint also applies to TinyGo: the \texttt{net/http} server stack was broken on \texttt{wasip1} beginning with TinyGo~0.28, due to a Netdev architecture refactor that permanently disabled the server-side code path. The solution adopted is a custom \texttt{server.go} file that calls \acs{WasmEdge} host socket functions directly via Go's \texttt{//go:wasmimport} directive, bypassing the broken \texttt{net/http} layer entirely. The \texttt{-gc=conservative} build flag is required to keep heap objects pinned and prevent the conservative GC from moving memory that is referenced by unsafe pointers in the \acs{WasmEdge} socket \acs{ABI}.
+A critical constraint also applies to TinyGo: the \texttt{net/http} server stack was broken on \texttt{wasip1} beginning with TinyGo~0.28, due to a Netdev architecture refactor that permanently disabled the server-side code path. The solution adopted is a custom \texttt{server.go} file that calls \acs{WasmEdge} host socket functions directly via Go's \texttt{//go:wasmimport} directive, bypassing the broken \texttt{net/http} layer entirely. The \texttt{-gc=conservative} build flag is required to keep heap objects pinned and prevent the conservative \acs{GC} from moving memory that is referenced by unsafe pointers in the \acs{WasmEdge} socket \acs{ABI}.
 
 \subsection{Orchestration: K3s with RuntimeClass}
 
@@ -80,7 +78,7 @@ Table~\ref{tab:variant_summary} summarizes the four implementation variants.
 
 \begin{table}[htbp]
     \centering
-    \caption{Summary of the four benchmark variants.}
+    \caption{Summary of the four benchmark variants}
     \label{tab:variant_summary}
     \adjustbox{max width=\linewidth}{%
     \begin{tabular}{llllll}
@@ -110,13 +108,13 @@ The prime sieve provides a controlled, \acs{CPU}-intensive baseline. Two additio
 Five metrics are measured across all variants. The first four are quantitative; the fifth is qualitative.
 
 \begin{enumerate}
-    \item \textbf{Startup Latency (Cold and Warm Start).} Time elapsed from \texttt{kubectl scale --replicas=0} followed by \texttt{kubectl scale --replicas=1} until the service returns the first \acs{HTTP}~200 response, measured by a polling script. Six measurement runs are performed per variant. Run~1 constitutes the \textit{cold start}: the node has no cached image layer, so the \acs{OCI} image is pulled from the registry before the pod can start. Runs~2--6 constitute \textit{warm starts}: the image is already cached on the node, so pod startup reflects only container/\acs{Wasm} runtime initialisation time. Statistics (mean, median, standard deviation) are reported separately for cold and warm starts. Units: milliseconds.
+    \item \textbf{Startup Latency (Cold and Warm Start).} Time elapsed from \texttt{kubectl scale --replicas=0} followed by \texttt{kubectl scale --replicas=1} until the service returns the first \acs{HTTP}~200 response, measured by a polling script. This elapsed time includes the period required for the previous pod instance to terminate, plus any \acs{OCI} image pull time (for cold starts), plus runtime initialisation. Six measurement runs are performed per variant. Run~1 constitutes the \textit{cold start}: the node has no cached image layer, so the \acs{OCI} image is pulled from the registry before the pod can start; only the single observed value is reported for cold start. Runs~2--6 constitute \textit{warm starts}: the image is already cached on the node, so pod startup reflects only container/\acs{Wasm} runtime initialisation time; mean, median, and standard deviation are computed across these five warm-start runs. All latency values are expressed in milliseconds.
 
-    \item \textbf{Memory Footprint.} Resident Set Size (\acs{RSS}) as reported by Prometheus~\cite{prometheus2024cncf} via the \texttt{container\_memory\_rss} metric, collected at two operating points: \textit{idle} (pod running for 60\,s with no incoming requests) and \textit{peak} (maximum \acs{RSS} observed during the k6 load test window). Scrape interval: 5\,s. Units: megabytes.
+    \item \textbf{Memory Footprint.} \acl{RSS} (\acs{RSS}) is the portion of a process's memory held in physical \acs{RAM} at a given point in time; it excludes memory swapped to disk and memory-mapped files that are not currently resident, making it the most practical measure of the \acs{RAM} a running service occupies on a production node. \acs{RSS} is reported by Prometheus~\cite{prometheus2024cncf} via the \texttt{container\_memory\_rss} metric, collected at two operating points: \textit{idle} (pod running for 60\,s with no incoming requests) and \textit{peak} (maximum \acs{RSS} observed during the k6 load test window). Scrape interval: 5\,s. Units: megabytes.
 
     \item \textbf{OCI Artifact Size.} The on-disk size of the \acs{OCI} image as reported by \texttt{docker~inspect}. This metric directly impacts image pull latency, registry storage costs, and cold-start time when images are not cached. Units: megabytes.
 
-    \item \textbf{Throughput and Latency Under Load.} Load testing is performed with k6~\cite{k6io2024grafana} using a ramping-\acs{VU} executor: 1~\acs{VU} ramps linearly to 50~\acp{VU} over 20\,s, holds at 50~\acp{VU} for 60\,s, then ramps down to 0 over 10\,s. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: requests per second (\acs{RPS}), \acs{HTTP} request failure rate (fraction of non-2xx responses), p50/p95/p99 end-to-end latency, and the custom \texttt{server\_compute\_us} metric extracted from the \acs{JSON} response body to measure server-side algorithm time independently of network and queuing effects.
+    \item \textbf{Throughput and Latency Under Load.} Load testing is performed with k6~\cite{k6io2024grafana} using a ramping-\acs{VU} executor. k6 models load using \acpl{VU}: each \acs{VU} is an independent simulated client that continuously sends requests to the target service for the duration of its active phase, waiting for a response before issuing the next request; the ramp-up phase gradually increases concurrency to avoid an instantaneous spike that would distort latency measurements. The load profile ramps from 1~\acs{VU} linearly to 50~\acp{VU} over 20\,s, holds at 50~\acp{VU} for 60\,s, then ramps down to 0 over 10\,s. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: requests per second (\acs{RPS}), \acs{HTTP} request failure rate (fraction of non-2xx responses), p50/p95/p99 end-to-end latency, and the custom \texttt{server\_compute\_us} metric extracted from the \acs{JSON} response body to measure server-side algorithm time independently of network and queuing effects.
 
     \item \textbf{Developer Experience (Qualitative).} A structured narrative assessment of the engineering effort required to build, test, and deploy each variant. Four dimensions are evaluated using a four-point friction scale (Low / Medium / High / Very~High): (a) toolchain setup and installation, (b) dependency compatibility under \acs{WASI}~P1, (c) \acs{K8s} cluster integration complexity, and (d) debugging and observability capability. This assessment is presented in \hyperref[chap:evaluation]{Chapter~\ref{chap:evaluation}} and directly addresses \acs{RQ4}.
 \end{enumerate}
