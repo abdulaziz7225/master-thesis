@@ -1,10 +1,12 @@
 \chapter{Background}
 \label{chap:background}
 
-This chapter provides the foundational technical context required to evaluate the comparative analysis presented in this thesis. It traces the evolution of computing infrastructure from on-premises hardware to modern cloud paradigms, details the mechanics of containerization and orchestration, and culminates in a comprehensive architectural breakdown of \ac{Wasm} as an emerging server-side execution environment.
+This chapter provides the foundational technical context required to evaluate the comparative analysis presented in this thesis. It traces the evolution of computing infrastructure from on-premises hardware to modern cloud paradigms, details the mechanics of containerization and orchestration, and culminates in a comprehensive architectural breakdown of \ac{Wasm} as an emerging server-side execution environment. This background is organised into three sections: cloud computing paradigms and microservice architecture (\S\ref{sec:cloud_microservices}), containerization and Kubernetes orchestration (\S\ref{sec:containerization}), and the technical foundations of WebAssembly and its server-side ecosystem (\S\ref{sec:wasm}).
 
 \section{Cloud Computing and Microservices}
 \label{sec:cloud_microservices}
+
+This section establishes the cloud computing context that motivates the need for lightweight execution environments studied in this thesis. It traces the paradigm evolution from \acs{IaaS} to \acs{FaaS} and then examines microservice architecture as the software design pattern that drove the demand for efficient, low-overhead container runtimes.
 
 \subsection{The Evolution of Cloud Paradigms}
 The genesis of modern software deployment traces back to on-premises data centers, where organizations were solely responsible for the procurement, maintenance, and scaling of physical hardware. This capital-heavy model suffered from severe resource underutilization; servers were provisioned for peak load, leaving them idle during standard operations. The modern cloud computing era shifted the industry to a pay-as-you-go, scalable operational model, fundamentally altering how infrastructure is managed~\cite{mell2011nist}.
@@ -12,7 +14,7 @@ The genesis of modern software deployment traces back to on-premises data center
 As cloud computing matured, the industry developed a ``Shared Responsibility Model,'' where the abstraction layer moved progressively higher up the stack. As illustrated in Figure~\ref{fig:iaas_paas_faas_saas}, this spectrum dictates whether the cloud provider or the client is responsible for specific layers of the technological stack:
 
 \begin{itemize}
-    \item \textbf{\acl{IaaS} (\acs{IaaS}):} The cloud provider manages the physical hardware, storage, and networking. The client rents virtualized infrastructure (e.g., a \acl{VM}) and retains full responsibility for managing the operating system, middleware, language runtimes, and the application code itself. This offers maximum control but requires significant operational overhead.
+    \item \textbf{\acl{IaaS} (\acs{IaaS}):} The cloud provider manages the physical hardware, storage, and networking. The client rents virtualized infrastructure (e.g., a \ac{VM}) and retains full responsibility for managing the operating system, middleware, language runtimes, and the application code itself. This offers maximum control but requires significant operational overhead.
     \item \textbf{\acl{PaaS} (\acs{PaaS}):} The provider abstracts both the underlying hardware and the operating system. The client is provided a managed environment and is solely responsible for deploying their application code and managing their data. Traditional Docker container deployments often operate in this space.
     \item \textbf{\acl{FaaS} (\acs{FaaS}) / Serverless:} The highest level of \textit{infrastructure} abstraction for a developer. The cloud provider dynamically manages the allocation, provisioning, and scaling of the servers and runtimes. The client writes granular, event-driven functions and dictates the trigger configurations. Crucially, \acs{FaaS} allows applications to ``scale to zero,'' eliminating compute costs during periods of inactivity~\cite{jonas2019cloud}.
     \item \textbf{\acl{SaaS} (\acs{SaaS}):} The highest level of \textit{software} abstraction. The cloud provider hosts and manages the entire application stack. The client manages nothing regarding the deployment or execution environment; they simply consume the finished software over the internet.
@@ -21,7 +23,7 @@ As cloud computing matured, the industry developed a ``Shared Responsibility Mod
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.8\textwidth]{figures/iaas_paas_faas_saas.pdf}
-    \caption{The Shared Responsibility Model across varying Cloud Computing Paradigms.}
+    \caption{The Shared Responsibility Model across varying Cloud Computing Paradigms. Adapted from Mell and Grance~\cite{mell2011nist}}
     \label{fig:iaas_paas_faas_saas}
 \end{figure}
 
@@ -32,10 +34,14 @@ Microservice architecture emerged as the logical software design pattern for clo
 
 This paradigm offers distinct advantages: development agility, localized fault isolation, and the ability to scale specific system bottlenecks independently. However, it introduces severe distributed system challenges. Managing network latency, data consistency, and the operational overhead of packaging and deploying hundreds of individual services necessitated the creation of entirely new virtualization and orchestration layers.
 
+The relevance of microservice architecture to this thesis is direct: the experimental benchmark in Chapter~\ref{chap:methodology} implements a stateless \acs{HTTP} microservice deployed in four variants within a Kubernetes cluster. The performance bottlenecks introduced by \acs{WASI} Preview~1's single-threaded I/O model are most acutely visible in microservice scenarios with concurrent request loads, making microservices the natural evaluation domain for this comparison.
+
 \section{Containerization and Orchestration}
 \label{sec:containerization}
 
-\subsection{Virtual Machines vs. Containers}
+This section covers the containerization technologies and orchestration platform that form the deployment baseline compared in this thesis. It first contrasts \acp{VM} with containers to motivate Docker's design, then covers Docker's \acs{OCI} standardization, and finally describes how \ac{K8s} orchestrates containerized workloads at scale---the same platform used to run all four benchmark variants.
+
+\subsection{Virtual Machines vs.\ Containers}
 To solve the deployment complexity of microservices, the industry initially relied on \acp{VM}. However, \acp{VM} require a hypervisor to emulate physical hardware, atop which a complete guest \ac{OS} is installed. This results in gigabytes of memory overhead and startup times measured in minutes, making them inherently unsuitable for transient, rapidly scaling microservices.
 
 Docker revolutionized the landscape by democratizing Linux containers. Instead of virtualizing the hardware, containers virtualize the operating system~\cite{merkel2014docker}. As shown in Figure~\ref{fig:virtual_machine_vs_docker}, Docker relies on two core Linux kernel features:
@@ -51,49 +57,53 @@ Docker revolutionized the landscape by democratizing Linux containers. Instead o
     \label{fig:virtual_machine_vs_docker}
 \end{figure}
 
-Docker's definitive innovation was the standardization of the container image format, now governed by the \ac{OCI}. By packaging application code alongside its dependencies, libraries, and a base filesystem into a single portable unit, Docker ensured environment consistency from a developer's laptop to production servers.
+Docker's definitive innovation was the standardization of the container image format, now governed by the \ac{OCI}~\cite{oci2024spec}. By packaging application code alongside its dependencies, libraries, and a base filesystem into a single portable unit, Docker ensured environment consistency from a developer's laptop to production servers~\cite{merkel2014docker}.
 
 Despite its dominance, the \acs{OCI} standard has inherent drawbacks. Because containers share the host's Linux kernel, a kernel-level vulnerability can potentially compromise all containers on that host, posing security risks in multi-tenant environments. Furthermore, traditional container images are bulky; they bundle a userland \acs{OS} and language runtimes alongside the application. This bulk introduces latency during image transfer and initialization---known as the ``cold start'' problem---which is highly detrimental in \acs{FaaS} and edge computing environments~\cite{gadepalli2020challenges}.
 
 \subsection{Kubernetes Orchestration}
 As microservices proliferated, manually managing individual containers across a fleet of servers became operationally unfeasible. \ac{K8s} emerged as the industry-standard container orchestration platform. It abstracts the underlying cluster of hardware, allowing engineers to declare the desired state of their applications rather than manually scripting deployments~\cite{burns2016borg}.
 
-\acs{K8s} operates on a distributed architecture, as depicted in Figure~\ref{fig:kubernetes_architecture}. The Control Plane dictates instructions to worker nodes. Each worker node runs an agent called a Kubelet, which manages Pods---the smallest deployable computing unit, typically containing one or more tightly coupled containers. Crucially, \acs{K8s} communicates with the underlying container runtime (like containerd or CRI-O) via the \ac{CRI}. This decoupled architecture established strict standardizations, eventually allowing alternative, non-Linux execution environments, such as \acs{Wasm}, to be orchestrated seamlessly alongside standard \acs{OCI}-compliant containers.
+\acs{K8s} operates on a distributed architecture, as depicted in Figure~\ref{fig:kubernetes_architecture}. The Control Plane dictates instructions to worker nodes. Each worker node runs an agent called a Kubelet, which manages Pods---the smallest deployable computing unit, typically containing one or more tightly coupled containers~\cite{burns2016borg}. Crucially, \acs{K8s} communicates with the underlying container runtime (like containerd or CRI-O) via the \ac{CRI}. This decoupled architecture established strict standardizations, eventually allowing alternative, non-Linux execution environments, such as \acs{Wasm}, to be orchestrated seamlessly alongside standard \acs{OCI}-compliant containers.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.8\textwidth]{figures/k8s_architecture.pdf}
-    \caption{Kubernetes Architecture: Control Plane, worker nodes, Pods, and the \acs{CRI} decoupling layer.}
+    \caption{Kubernetes Architecture: Control Plane, worker nodes, Pods, and the \acs{CRI} decoupling layer}
     \label{fig:kubernetes_architecture}
 \end{figure}
 
 \section{WebAssembly}
 \label{sec:wasm}
 
-\subsection{Origin and Technical Architecture}
-\ac{Wasm} is a binary instruction format designed for a stack-based virtual machine. It originated from the need to execute high-performance code within web browsers---a domain historically constrained by JavaScript's inconsistent performance and parsing overhead. \acs{Wasm} was officially released in 2017 as a \ac{W3C} standard, sitting alongside \ac{HTML}, \ac{CSS}, and JavaScript as an official language of the web~\cite{haas2017bringing}.
+This section provides the technical foundation for \acl{Wasm} (\acs{Wasm}) and its server-side system interface (\acs{WASI}), the execution environment used by the two \acs{Wasm} variants in this study's 2$\times$2 benchmark matrix. \acs{Wasm}'s design was shaped by its browser origins; understanding this context is essential to appreciating both its advantages---portability, compact binaries, and structural memory isolation---and the current limitations of its server-side deployment model that this thesis investigates. This section begins with \acs{Wasm}'s origins and technical architecture, covers its module format, memory model, language support, and security model, then describes the \acs{WASI} interface layer, the Component Model evolution that defines the future direction of this research, the current industry adoption landscape, available runtimes, and the \acs{K8s} integration mechanisms used in this thesis.
 
-\acs{Wasm} functions as an agnostic hardware abstraction layer. Developers write code in systems languages like C, C++, or Rust and compile it down to \texttt{.wasm} binaries, as illustrated in Figure~\ref{fig:compiling_different_langauges_to_wasm}. Beyond these systems languages, \acs{Wasm} serves as a compilation target for more than 40 programming languages~\cite{fermyon2024langmatrix}, including Go, Python, Kotlin, C\#, and TypeScript, with varying degrees of ecosystem maturity across \acs{WASI} runtimes.
+\subsection{Origin and Technical Architecture}
+\acs{Wasm} is a binary instruction format designed for a stack-based virtual machine. It originated from the need to execute high-performance code within web browsers---a domain historically constrained by JavaScript's inconsistent performance and parsing overhead. \acs{Wasm} was officially released in 2017 as a \ac{W3C} standard, sitting alongside \ac{HTML}, \ac{CSS}, and JavaScript as an official language of the web~\cite{haas2017bringing}. This browser heritage established the two properties most consequential for this thesis: its strict isolation model, designed to prevent malicious web code from accessing the host system, and its compact binary format, optimised for fast transmission over network connections. Developers write code in systems languages like C, C++, or Rust and compile it down to \texttt{.wasm} binaries, as illustrated in Figure~\ref{fig:compiling_different_langauges_to_wasm}. Beyond these systems languages, \acs{Wasm} serves as a compilation target for more than 40 programming languages~\cite{fermyon2024langmatrix}, including Go, Python, Kotlin, C\#, and TypeScript, with varying degrees of ecosystem maturity across \acs{WASI} runtimes.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.5\textwidth]{figures/languages_compile_to_wasm.pdf}
-    \caption{A selection of programming languages that compile to \acs{Wasm}, illustrating its language-agnostic compilation model.}
+    \caption{A selection of programming languages that compile to \acs{Wasm}, illustrating its language-agnostic compilation model}
     \label{fig:compiling_different_langauges_to_wasm}
 \end{figure}
 
 \subsection{Module Structure and Stack-Based Execution}
-\acs{Wasm} is fundamentally a stack machine. Unlike register-based physical \ac{CPU} architectures (such as x86\_64 or ARM64), \acs{Wasm} instructions implicitly operate on an operand stack. Variables are pushed onto the stack, and operations pop these operands, compute the result, and push it back. This design yields highly compact binary modules, as instructions do not need to explicitly encode register numbers, accelerating both transmission over networks and decoding phases.
+This subsection describes how \acs{Wasm} programs are structured and executed. These mechanical properties---stack-based execution, compact binary sections, and ahead-of-time or just-in-time compilation---directly govern the startup latency and compute performance metrics measured in this thesis.
 
-A \acs{Wasm} application is distributed as a strictly standardized binary module consisting of discrete sections. These include the Type section (function signatures), Import section (host-provided dependencies), Code section (executable bytecode), and Data section (initial memory state). Before execution, a \acs{Wasm} runtime performs a deterministic, single-pass validation to ensure type safety and structural integrity. Because the bytecode is designed to map cleanly to native machine instructions, runtimes employ \ac{JIT} or \ac{AOT} compilation engines (such as Cranelift or LLVM) to translate \acs{Wasm} into highly optimized, native machine code instantaneously.
+\acs{Wasm} is fundamentally a stack machine~\cite{haas2017bringing}. Unlike register-based physical \ac{CPU} architectures (such as x86\_64 or ARM64), \acs{Wasm} instructions implicitly operate on an operand stack. Variables are pushed onto the stack, and operations pop these operands, compute the result, and push it back. This design yields highly compact binary modules, as instructions do not need to explicitly encode register numbers, accelerating both transmission over networks and decoding phases.
+
+A \acs{Wasm} application is distributed as a strictly standardized binary module consisting of discrete sections~\cite{haas2017bringing}. These include the Type section (function signatures), Import section (host-provided dependencies), Code section (executable bytecode), and Data section (initial memory state). Before execution, a \acs{Wasm} runtime performs a deterministic, single-pass validation to ensure type safety and structural integrity. Because the bytecode is designed to map cleanly to native machine instructions, runtimes employ \ac{JIT} or \ac{AOT} compilation engines (such as Cranelift or \acs{LLVM}) to translate \acs{Wasm} into highly optimized, native machine code instantaneously~\cite{bytecodealliance2024wasmtime}.
 
 \subsection{Memory Management and Isolation}
+This subsection explains \acs{Wasm}'s approach to memory safety and fault containment---the properties that make it a compelling alternative to kernel-based container isolation for multi-tenant deployments and that are analysed in the security comparison in \hyperref[chap:state_of_the_art]{Chapter~\ref{chap:state_of_the_art}}.
+
 One of \acs{Wasm}'s defining technical characteristics is its approach to memory management and fault isolation. The architecture relies on the following core principles:
 \begin{itemize}
-    \item \textbf{Compact Binary Format:} The \texttt{.wasm} format is highly optimized, allowing for rapid fetching, decoding, and execution.
-    \item \textbf{Hardware Agnosticism:} Because it utilizes a virtual stack machine, the compiled bytecode makes no assumptions about the underlying physical \acs{CPU} architecture, enabling true portability across varied cloud node pools.
-    \item \textbf{Linear Memory Space:} \acs{Wasm} operates in a contiguous, resizable array of bytes known as linear memory. Code executing within the \acs{Wasm} module operates strictly with integer offsets within this array; it cannot execute arbitrary pointers or access host memory outside this strictly enforced boundary.
-    \item \textbf{\acl{SFI} (\acs{SFI}):} Unlike Docker, which relies on the host \acs{OS} kernel (cgroups/namespaces) to contain a process, \acs{Wasm} achieves isolation mathematically at the runtime level. Any attempt to access memory outside the allocated linear boundary results in a deterministic trap, halting the module instantly without compromising the host.
+    \item \textbf{Compact Binary Format:} The \texttt{.wasm} format is highly optimized, allowing for rapid fetching, decoding, and execution~\cite{haas2017bringing}.
+    \item \textbf{Hardware Agnosticism:} Because it utilizes a virtual stack machine, the compiled bytecode makes no assumptions about the underlying physical \acs{CPU} architecture, enabling true portability across varied cloud node pools~\cite{haas2017bringing}.
+    \item \textbf{Linear Memory Space:} \acs{Wasm} operates in a contiguous, resizable array of bytes known as linear memory~\cite{haas2017bringing}. Code executing within the \acs{Wasm} module operates strictly with integer offsets within this array; it cannot execute arbitrary pointers or access host memory outside this strictly enforced boundary.
+    \item \textbf{\acl{SFI} (\acs{SFI}):} Unlike Docker, which relies on the host \acs{OS} kernel (cgroups/namespaces) to contain a process, \acs{Wasm} enforces isolation through a combination of static validation and runtime bounds-checking~\cite{haas2017bringing, wahbe1993sfi}. At load time, the runtime performs a single-pass type-safety check; at execution time, every memory access is confined to the module's linear memory region by compiled-in bounds checks. Any attempt to access memory outside the allocated linear boundary results in a deterministic trap, halting the module instantly without compromising the host.
 \end{itemize}
 
 \subsection{Language Agnosticism and the JVM Comparison}
@@ -102,7 +112,7 @@ The concept of \ac{WORA} was popularized by Java. Java achieves portability by c
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.7\textwidth]{figures/java_vs_wasm.pdf}
-    \caption{An analogy comparing the cross-platform execution models of Java (\acs{JVM}) and \acs{Wasm}. Adapted from Chiarlone~\cite{chiarlone2024serverside}.}
+    \caption{An analogy comparing the cross-platform execution models of Java (\acs{JVM}) and \acs{Wasm}. Adapted from Chiarlone~\cite{chiarlone2024serverside}}
     \label{fig:java_vs_wasm}
 \end{figure}
 
@@ -113,7 +123,9 @@ To resolve this, the \ac{WasmGC} standard has been introduced to delegate memory
 The architectural impact on artifact density is significant. By eliminating the need to bundle memory management code, \acs{WasmGC} binaries for managed languages can achieve dramatically smaller footprints. In early benchmarks, \acs{WasmGC} binaries for languages like Java were proven to be considerably smaller than equivalent modules compiled from C or Rust, because C and Rust must still bundle manual memory management routines like \texttt{malloc} and \texttt{free} inside the binary~\cite{steiner2023wasmgc}. This advancement firmly positions \acs{Wasm} as a viable, high-density target for the entire spectrum of modern programming languages.
 
 \subsection{The Server-Side Evolution: WASI}
-While \acs{Wasm} successfully delivered near-native performance for computationally heavy browser applications, its portability, mathematical security model, and minimal footprint rapidly garnered interest for backend deployment. Solomon Hykes, the founder of Docker, once famously stated:
+This subsection introduces \acl{WASI} (\acs{WASI}), the system interface that enables \acs{Wasm} to be used as a server-side runtime---and without which the experiments in this thesis would not be possible.
+
+While \acs{Wasm} successfully delivered near-native performance for computationally heavy browser applications, its portability, structural memory isolation model, and minimal footprint rapidly garnered interest for backend deployment. Solomon Hykes, the founder of Docker, once famously stated:
 \begin{quote}
     If WASM+WASI existed in 2008, we wouldn't have needed to create Docker. That's how important it is. WebAssembly on the server is the future of computing.~\cite{hykes2019tweet}
 \end{quote}
@@ -121,31 +133,171 @@ While \acs{Wasm} successfully delivered near-native performance for computationa
 Because \acs{Wasm} is entirely isolated by default, a bare \acs{Wasm} module running on a server cannot open a network socket, read a file, or query the system clock. In 2019, the \acl{WASI} was introduced to solve this. \acs{WASI} defines a standardized \acs{API} specification that provides \acs{Wasm} modules with secure, granular, capability-based access to the host operating system~\cite{clark2019standardizing}. By acting as a secure \acs{POSIX}-like layer, \acs{WASI} transforms \acs{Wasm} from a sandboxed browser calculator into a fully functional server-side technology.
 
 \subsection{Capability-Based Security Model}
-\acs{WASI} implements a capability-based security model that diverges significantly from traditional Linux permissions. A Linux container limits an already-running \acs{OS} environment. \acs{WASI}, however, enforces a strict ``deny-by-default'' posture embodying the \ac{POLA}.
+This subsection details \acs{WASI}'s deny-by-default security model, which contrasts fundamentally with Linux container permissions and is directly relevant to the security trade-offs analysed in \hyperref[chap:state_of_the_art]{Chapter~\ref{chap:state_of_the_art}}.
+
+\acs{WASI} implements a capability-based security model that diverges significantly from traditional Linux permissions~\cite{clark2019standardizing}. A Linux container limits an already-running \acs{OS} environment. \acs{WASI}, however, enforces a strict ``deny-by-default'' posture embodying the \ac{POLA}.
 
 If a \acs{Wasm} module needs to access a configuration file, it cannot invoke a standard \texttt{open()} system call for an arbitrary path (e.g., \texttt{/etc/config}). Instead, the host runtime must explicitly grant the module a ``pre-opened'' file descriptor at startup. The module is completely blind to the existence of the host filesystem outside the specific directory tree explicitly mapped and passed to it by the runtime. Figure~\ref{fig:wasm_sandboxed_model} contrasts this capability-based model with the traditional Linux permission model.
 
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\textwidth]{figures/wasm_sandboxed_model.pdf}
-    \caption{Comparative Security Models: Traditional Linux Permissions vs.\ \acs{Wasm} Capability-Based Access (\acs{WASI}).}
+    \caption{Comparative Security Models: Traditional Linux Permissions vs.\ \acs{Wasm} Capability-Based Access (\acs{WASI})}
     \label{fig:wasm_sandboxed_model}
 \end{figure}
 
 \subsection{Architectural Evolution: From POSIX to the Component Model}
+\label{sec:component_model}
+This subsection traces the evolution from \acs{WASI} Preview~1---the version used in this thesis---to the WebAssembly Component Model (\acs{WASI} Preview~2), explaining both why Preview~1 was chosen for the current experiments and what the transition to Preview~2 will resolve.
+
 The initial iteration of \acs{WASI} (Preview~1) was heavily modeled after standard \acs{POSIX} interfaces, focusing on file descriptors, environment variables, and standard I/O streams. While effective for simple command-line tools and basic microservices, this \acs{POSIX}-centric approach introduced friction when handling complex, multi-language cloud-native interactions.
 
-To address this, the \acs{Wasm} ecosystem is currently transitioning to the WebAssembly Component Model (\acs{WASI} Preview~2 and Preview~3). The Component Model shifts \acs{WASI} from a low-level \acs{POSIX} \acs{API} to a high-level, language-agnostic interface system utilizing \ac{WIT}. This advancement allows discrete \acs{Wasm} components---potentially written in entirely different source languages---to natively interoperate. They can securely pass complex data types (such as strings, records, and variants) across execution boundaries without sharing linear memory, laying the foundation for highly modular, secure, and dynamically composable microservice architectures.
+\subsubsection{The Interoperability Problem in WASI Preview~1}
+\acs{WASI} Preview~1's memory model is a significant limitation for composing services written in multiple languages. When two \acs{Wasm} modules need to share data, they must agree on a shared linear memory layout---effectively a manual, type-unsafe \acs{ABI} contract. This is analogous to passing raw C structs across shared memory boundaries: fragile, language-specific, and a source of subtle bugs as either module evolves~\cite{bytecodealliance2024componentmodel}.
 
-Critically for server-side applications, \acs{WASI} Preview~2 introduces \texttt{wasi:http} and \texttt{wasi:io/poll}, which together enable asynchronous, event-driven \acs{HTTP} servers within \acs{Wasm} modules~\cite{bytecodealliance2024componentmodel, clark2023preview2}. This directly resolves the single-threaded \acs{HTTP} handling limitation present in \acs{WASI} Preview~1, which is a central finding of this thesis. The experiments in this work target \acs{WASI} Preview~1 exclusively, as it remains the production-deployed standard for the runtimes and \acs{K8s} integrations used here; the Component Model represents the intended future direction.
+This friction is especially limiting for the microservice use case. A microservice architecture ideally allows individual services to be implemented in the most suitable language. \acs{WASI}~P1 forces all cross-module communication through either network \acs{HTTP} calls---which carry full serialization and network overhead---or through the brittle shared-memory \acs{ABI} described above.
 
-\subsection{Wasm vs. Traditional Containers}
-Applying \acs{Wasm} and \acs{WASI} to the server yields a deployment artifact that sits functionally between a traditional \acs{VM} and an \acs{OCI} container, offering unique operational characteristics:
+\subsubsection{The Component Model: WIT and Typed Interfaces}
+To address this, the \acs{Wasm} ecosystem is currently transitioning to the WebAssembly Component Model (\acs{WASI} Preview~2 and Preview~3)~\cite{bytecodealliance2024componentmodel}. \ac{WIT} is a typed, language-agnostic interface definition language that allows developers to express function signatures and data types at a high level, independently of any specific language's memory layout. The Component Model shifts \acs{WASI} from a low-level \acs{POSIX} \acs{API} to a high-level, language-agnostic interface system utilizing \acs{WIT}.
+
+A \acs{Wasm} Component is a self-describing unit that declares its capabilities through \acs{WIT} interfaces. When two components are composed---either statically at build time or dynamically at runtime---the \acs{Wasm} runtime validates that interface contracts are satisfied and generates the necessary glue code to safely pass complex types (strings, records, variants, lists) across component boundaries without sharing linear memory. This is conceptually similar to \ac{gRPC}/Protobuf for inter-service communication, but with zero network overhead: the call happens in-process between two sandboxed modules. This advancement allows discrete \acs{Wasm} components---potentially written in entirely different source languages---to natively interoperate, laying the foundation for highly modular, secure, and dynamically composable microservice architectures.
+
+\subsubsection{Nano-Process Composition and Zero-Network Microservices}
+The Component Model enables a ``nano-process'' architecture where fine-grained \acs{Wasm} components---each encapsulating a single responsibility---are composed into a larger application~\cite{bytecodealliance2024componentmodel}. Unlike traditional microservices that communicate over \acs{HTTP}, composed \acs{Wasm} components communicate via in-process \acs{WIT} function calls, eliminating serialization and network round-trip overhead entirely.
+
+This architectural model is particularly compelling for the microservice domain: it retains the isolation properties of separate services (each component has its own linear memory, capabilities, and sandbox) while recovering the performance characteristics of in-process function calls. Whether the resulting latency and throughput advantages materialize in production deployments is an open research question beyond the scope of this thesis.
+
+\subsubsection{WASI Preview~2 Status and Relevance to This Thesis}
+\acs{WASI} Preview~2 was ratified by the Bytecode Alliance in February 2024~\cite{clark2023preview2}. Its stable interface worlds include \texttt{wasi:cli}, \texttt{wasi:filesystem}, \texttt{wasi:http}, \texttt{wasi:sockets}, and \texttt{wasi:io/poll} (the async I/O poll interface). The \texttt{wasi:http} world in particular provides a fully asynchronous \acs{HTTP} handler interface that directly resolves the single-threaded bottleneck documented in this thesis: async \acs{HTTP} frameworks targeting \texttt{wasi:http} can interleave requests without blocking, enabling multi-request concurrency on a single-threaded event loop.
+
+Table~\ref{tab:wasi_p1_vs_p2} summarises the key differences between the two versions.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Key differences between \acs{WASI} Preview~1 and Preview~2}
+    \label{tab:wasi_p1_vs_p2}
+    \adjustbox{max width=\linewidth}{%
+    \begin{tabular}{lll}
+        \hline
+        \textbf{Aspect} & \textbf{WASI Preview~1} & \textbf{WASI Preview~2 (Component Model)} \\
+        \hline
+        Interface style    & POSIX-like (file descriptors) & WIT typed interfaces \\
+        HTTP server        & No standard; runtime-specific extensions & \texttt{wasi:http} async handler \\
+        Concurrency        & Single-threaded I/O & Event-driven async I/O \\
+        Cross-language     & Brittle shared-memory ABI & WIT composability, type-safe \\
+        Multi-module composition & Network calls or raw memory & In-process WIT function calls \\
+        Production readiness & Widely deployed (this thesis) & Ratified Feb 2024; partial runtime support \\
+        \hline
+    \end{tabular}}
+\end{table}
+
+The experiments in this thesis target \acs{WASI} Preview~1 exclusively. This choice reflects the production-deployed state of the \acs{Wasm}+\acs{K8s} ecosystem at time of writing: \acs{WasmEdge}~0.14.x has only partial \acs{WASI}~P2 support, and the \texttt{containerd-wasm-shims}/\texttt{runwasi} \acs{K8s} integration does not yet support \acs{WASI}~P2 Component Model artifacts. Importantly, the code structure in this thesis is designed to ease the eventual transition: all four variants share the same \acs{HTTP} \acs{API} contract (\texttt{/prime}, \texttt{/health}), so migrating the \acs{Wasm} variants from \texttt{wasmedge\_wasi\_socket} to a \texttt{wasi:http}-compatible handler is a local implementation change, not a full redesign. The Component Model and \acs{WASI}~P2 are treated as future work in \hyperref[chap:discussion]{Chapter~\ref{chap:discussion}}.
+
+\subsection{Industry Adoption and Ecosystem}
+\label{sec:industry_landscape}
+This subsection maps the current production deployment landscape of server-side \acs{Wasm}. Understanding where \acs{Wasm} has already been deployed commercially is essential context for interpreting the benchmark results in Chapter~\ref{chap:evaluation} and for calibrating expectations about ecosystem maturity.
+
+\subsubsection{Edge Computing Providers}
+The first large-scale production deployments of server-side \acs{Wasm} occurred at edge computing providers, where cold-start density is a primary commercial constraint.
+
+\textbf{Cloudflare Workers}~\cite{cloudflare2024workers} runs \acs{Wasm} inside V8 Isolates---not a \acs{WASI} runtime---by embedding the browser's JavaScript engine at the network edge. Each Worker invocation receives a fresh V8 Isolate with sub-millisecond startup. This model proves that \acs{Wasm}'s density advantages are commercially viable, though it uses a different isolation mechanism than the \acs{WASI}-based server-side deployments studied in this thesis.
+
+\textbf{Fastly Compute}~\cite{fastly2024compute} originally built its edge computing platform on Lucet, a compiler and runtime developed internally. Lucet was deprecated in 2022 and replaced by Wasmtime, the Bytecode Alliance's reference runtime, which provides sub-millisecond instantiation and full \acs{WASI}~P1 support. Fastly's production deployment of Wasmtime at scale demonstrates the commercial maturity of the \acs{Wasm} runtime ecosystem.
+
+\subsubsection{Application Frameworks}
+\textbf{Fermyon Spin}~\cite{fermyon2024spin} is a developer-centric framework for building serverless \acs{Wasm} microservices. Spin uses a request-scoped execution model: a fresh \acs{Wasm} instance is created per \acs{HTTP} request and destroyed upon response. This model maximizes cold-start density and isolates request state, but is architecturally opposite to the persistent \acs{TCP} server approach used in this thesis. Spin targets \acs{WASI}~P1 and is actively migrating to \acs{WASI}~P2's \texttt{wasi:http} world.
+
+\textbf{WasmCloud}~\cite{wasmcloud2024} is an actor-model distributed application platform. Services are implemented as location-transparent actors that communicate over a \acs{NATS} message bus; the runtime injects ``capability providers'' for networking, databases, and other host resources at runtime without baking them into the actor binary. WasmCloud targets the \acs{WASI}~P2 Component Model and is sponsored by the \acs{CNCF}. Its distributed-systems orientation makes it a strong candidate for the Volta microservice architecture planned as future work in this thesis.
+
+\textbf{WasmEdge}~\cite{cncf2024wasmedge} is a \acs{CNCF} sandbox project since 2021. Unlike Spin or WasmCloud, \acs{WasmEdge} is a general-purpose runtime that supports long-running \acs{TCP} servers, multiple language targets (Rust, TinyGo, C/C++, Python), and a \acs{containerd} shim for \acs{K8s} \texttt{RuntimeClass} integration. These properties make it the runtime of choice for this thesis; the detailed selection rationale is presented in Section~\ref{sec:runtime_landscape}.
+
+\subsection{WebAssembly Runtimes: A Comparative Overview}
+\label{sec:runtime_landscape}
+This subsection surveys the major server-side \acs{Wasm} runtimes and justifies the selection of \acs{WasmEdge} for the experiments in this thesis. Runtime selection is a non-trivial decision: each runtime makes different trade-offs between \acs{WASI} compliance, \acs{K8s} integration, compilation strategy, and language support.
+
+The server-side \acs{Wasm} ecosystem includes several runtimes with distinct design philosophies, performance characteristics, and \acs{K8s} integration capabilities. Table~\ref{tab:wasm_runtimes} provides a comparative overview of the major runtimes evaluated before selecting \acs{WasmEdge} for this thesis.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Comparative overview of major \acs{Wasm} runtimes considered for this thesis}
+    \label{tab:wasm_runtimes}
+    \adjustbox{max width=\linewidth}{%
+    \begin{tabular}{llllll}
+        \hline
+        \textbf{Runtime} & \textbf{Backend} & \textbf{\acs{WASI}~P1} & \textbf{\acs{WASI}~P2} & \textbf{\acs{K8s} Shim} & \textbf{Primary Use Case} \\
+        \hline
+        Wasmtime   & Cranelift    & \checkmark & \checkmark & runwasi        & Reference, server-side \\
+        Wasmer     & Cranelift/LLVM & \checkmark & Partial  & Yes            & Edge, embedded \\
+        \acs{WasmEdge}   & LLVM         & \checkmark & Partial    & crun/containerd & Cloud-native, \acs{TCP} \\
+        WAMR       & AOT/JIT/Interp & \checkmark & Partial  & ---            & Embedded, IoT \\
+        wazero     & Go native    & \checkmark & ---        & ---            & Go embedding \\
+        \hline
+    \end{tabular}}
+\end{table}
+
+\textbf{Wasmtime}~\cite{bytecodealliance2024wasmtime} is the Bytecode Alliance's reference runtime, backed by the Cranelift code generator. It has the most complete \acs{WASI}~P2 support of any runtime and is the foundation for Fastly Compute. Its \texttt{runwasi} containerd shim enables \acs{K8s} \texttt{RuntimeClass} integration.
+
+\textbf{Wasmer} is a commercial runtime targeting edge and embedded deployments. It supports multiple compiler backends (Cranelift, LLVM, Singlepass) and has a packaging ecosystem (\texttt{wasmer.io} registry). Its \acs{WASI}~P2 support is partial and evolving.
+
+\textbf{WAMR} (WebAssembly Micro Runtime) is developed by Intel and targets resource-constrained embedded and IoT devices. It supports \acs{AOT}, \acs{JIT}, and interpreter execution modes. Its primary focus is not cloud-native \acs{K8s} deployments.
+
+\textbf{wazero} is a pure-Go \acs{Wasm} runtime with zero \acs{CGO} dependencies. It is ideal for embedding \acs{Wasm} inside Go applications but does not have a \acs{K8s} containerd shim.
+
+\subsubsection{Why WasmEdge Was Chosen}
+
+The runtime selection process evaluated all runtimes in Table~\ref{tab:wasm_runtimes} against four non-negotiable constraints derived from the thesis experimental requirements:
 
 \begin{enumerate}
-    \item \textbf{Cold Start and Footprint:} Traditional \acs{OCI} containers bundle an \acs{OS} userland, frequently resulting in image sizes exceeding 100\,MB and startup times measured in seconds. A \acs{Wasm} module contains only the compiled application logic. \acs{Wasm} binaries are typically just a few megabytes and can be instantiated by a host runtime in microseconds. Long~et~al.\ demonstrated that \acs{Wasm} runtimes can perform at least 10$\times$ faster than Docker from a cold start for short-running workloads~\cite{long2023wasm}. Hall and Ramachandran further verified that \acs{Wasm}'s improved cold start times lead to up to 90\% faster response times for basic serverless tasks~\cite{hall2021serverless}.
-    \item \textbf{Security and Density:} \acs{Wasm} utilizes \acs{SFI}. If a \acs{Wasm} module is compromised, the attacker only controls the isolated linear memory sandbox. Because \acs{Wasm} modules do not require full \acs{OS} process overhead, the minimal memory footprint allows \acs{K8s} nodes to achieve exponentially higher workload density.
-    \item \textbf{Performance Trade-offs:} Despite its advantages in density and initialization, \acs{Wasm} presents concurrency constraints in its \acs{WASI} Preview~1 incarnation. \acs{Wasm} itself has a ratified Threads proposal~\cite{wasmthreadsproposal} supported across all major browsers and runtimes, but \acs{WASI} Preview~1 does not expose thread-spawning primitives to server-side \acs{Wasm} modules, leaving them constrained to single-threaded execution. Sondell (2024) demonstrated that in high-concurrency \acs{HTTP} server scenarios, a Docker container can process requests significantly faster because it can scale natively across multiple \acs{CPU} cores, whereas a single \acs{Wasm} instance operating under \acs{WASI}~P1 remains bottlenecked by sequential request processing~\cite{sondell2024performance}. Furthermore, Spies and Mock found that single-threaded \acs{Wasm} applications perform approximately 14\% slower than native x86\_64 binaries due to sandbox bounds-checking overhead~\cite{spies2021evaluation}.
+    \item \textbf{Long-running \acs{TCP} server support:} The benchmark services run as persistent \acs{HTTP} servers, not request-scoped functions. The runtime must support a blocking \texttt{accept()} loop or equivalent socket model.
+    \item \textbf{Multi-language support:} The experimental design requires both Rust and a Go-family language (TinyGo) to compile to and execute correctly on the same runtime.
+    \item \textbf{Kubernetes \acs{RuntimeClass} integration:} The runtime must have a \acs{containerd} shim enabling standard \acs{K8s} \texttt{RuntimeClass}-based pod scheduling without high-level operators.
+    \item \textbf{\acs{CNCF} credibility:} As an academic research project, the runtime must have recognised open-source governance to ensure reproducibility and long-term availability.
 \end{enumerate}
 
-By utilizing \acs{WASI} shims (such as \texttt{runwasi}), \acs{K8s} can now orchestrate these high-density \acs{Wasm} workloads directly alongside traditional Docker containers, establishing the precise technological foundation for the comparative analysis executed in this research.
+\acs{WasmEdge} satisfies all four constraints. Wasmtime also satisfies constraints 1, 3, and 4 but has less mature TinyGo socket support under \acs{WASI}~P1 at the time of implementation. SpinKube and WasmCloud were rejected because they introduce abstraction layers (the Spin framework and the \acs{NATS} broker, respectively) that would confound raw performance measurements.
+
+\subsection{WebAssembly in Kubernetes}
+\label{sec:wasm_k8s}
+This subsection describes how \acs{Wasm} workloads are integrated into \acs{K8s} clusters, culminating in the \texttt{RuntimeClass}-based mechanism used in this thesis. This integration layer is what makes the side-by-side comparison of Docker and \acs{Wasm} variants in a single cluster possible.
+
+\subsubsection{Evolution: From Krustlet to runwasi}
+
+The integration of \acs{Wasm} into \acs{K8s} has evolved through several distinct approaches over the past five years.
+
+\textbf{Krustlet} (2019--2022) was the first attempt to run \acs{Wasm} workloads on \acs{K8s}. Rather than plugging into the existing \acs{CRI} layer, Krustlet implemented the \acs{K8s} Kubelet \acs{API} directly, presenting itself to the control plane as a node that could schedule \acs{Wasm} pods. While it proved the feasibility of \acs{Wasm}-native scheduling, Krustlet's approach bypassed the standard \acs{CRI} and required a separate kubelet process per node. The project was deprecated in 2022 due to maintenance complexity and the lack of a clear production path.
+
+\textbf{runwasi}~\cite{runwasi2024} (Bytecode Alliance, 2022--present) is the \acs{CRI}-compliant successor. It implements the \texttt{containerd} shim~v2 protocol, allowing containerd to delegate \acs{Wasm} pod execution to any registered \acs{Wasm} runtime. From the \acs{K8s} control plane's perspective, \acs{Wasm} pods are indistinguishable from standard \acs{OCI} pods; the routing occurs transparently inside containerd based on the pod's \texttt{runtimeClassName}. This design allows \acs{Wasm} and Docker workloads to coexist on the same node without any \acs{K8s} \acs{API} changes.
+
+\subsubsection{Modern Wasm Operators for Kubernetes}
+
+Several higher-level operators have been developed to simplify the operational experience of running \acs{Wasm} workloads on \acs{K8s}.
+
+\textbf{SpinKube}~\cite{spinkube2024} combines the \texttt{runwasi} shim with the Fermyon Spin framework, adding a \texttt{SpinApp} \acs{CRD} that manages the lifecycle of Spin-based \acs{Wasm} applications. As of 2024, SpinKube is the most production-ready option for running \acs{WASI}~P2-compatible \acs{Wasm} workloads on \acs{K8s}.
+
+\textbf{WasmCloud Operator} bridges \acs{K8s} scheduling with the WasmCloud lattice, routing pod scheduling decisions to WasmCloud's \acs{NATS}-based actor runtime. This enables location-transparent actor deployment across hybrid cloud environments.
+
+\textbf{KWasm} is a \acs{K8s} operator that automates the installation of \acs{Wasm} runtime shims on cluster nodes via a DaemonSet, replacing the manual cloud-init bootstrap approach used in this thesis.
+
+\textbf{This thesis uses none of these operators.} Raw \texttt{RuntimeClass} + standard \texttt{Deployment} manifests were chosen deliberately to minimize abstraction layers and ensure that the benchmark results reflect the performance of the underlying \acs{Wasm} runtime, not the overhead of a higher-level framework.
+
+\subsubsection{RuntimeClass: The Bridge Between Paradigms}
+
+The \acs{K8s} \texttt{RuntimeClass} \acs{API} is the key mechanism that enables \acs{Wasm} and Docker workloads to coexist in the same cluster. A \texttt{RuntimeClass} object maps a handler name (e.g., \texttt{wasmedge}) to a registered containerd runtime plugin. When a pod specifies \texttt{spec.runtimeClassName: wasmedge}, the kubelet instructs containerd to use the registered \acs{WasmEdge} handler rather than the default \texttt{runc} path.
+
+This mechanism allows the benchmark deployments in this thesis to use structurally identical \texttt{Deployment} manifests for both \acs{Wasm} and Docker variants---the only differences being the \texttt{runtimeClassName} field and two \acs{OCI} annotations:
+\begin{itemize}
+  \item \texttt{run.oci.handler: wasmedge}
+  \item \texttt{module.wasm.image/variant: compat}
+\end{itemize}
+\noindent The complete \acs{K8s} configuration is detailed in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
+
+\subsection{Wasm vs.\ Traditional Containers}
+Applying \acs{Wasm} and \acs{WASI} to the server yields a deployment artifact that sits functionally between a traditional \ac{VM} and an \acs{OCI} container, offering unique operational characteristics:
+
+\begin{enumerate}
+    \item \textbf{Cold Start and Footprint:} Traditional \acs{OCI} containers bundle an \acs{OS} userland, frequently resulting in image sizes exceeding 100\,MB and startup times measured in seconds. A \acs{Wasm} module contains only the compiled application logic. \acs{Wasm} binaries are typically just a few megabytes and can be instantiated by a host runtime in microseconds. \textcite{long2023wasm} demonstrated that \acs{Wasm} runtimes can perform at least 10$\times$ faster than Docker from a cold start for short-running workloads. Hall and Ramachandran further verified that \acs{Wasm}'s improved cold start times lead to up to 90\% faster response times for basic serverless tasks~\cite{hall2021serverless}.
+    \item \textbf{Security and Density:} \acs{Wasm} utilizes \acs{SFI}. If a \acs{Wasm} module is compromised, the attacker only controls the isolated linear memory sandbox. Because \acs{Wasm} modules do not require full \acs{OS} process overhead, the minimal memory footprint allows \acs{K8s} nodes to achieve exponentially higher workload density.
+    \item \textbf{Performance Trade-offs:} Despite its advantages in density and initialization, \acs{Wasm} presents concurrency constraints in its \acs{WASI} Preview~1 incarnation. \acs{Wasm} itself has a ratified Threads proposal~\cite{wasmthreadsproposal} supported across all major browsers and runtimes, but \acs{WASI} Preview~1 does not expose thread-spawning primitives to server-side \acs{Wasm} modules, leaving them constrained to single-threaded execution. \textcite{sondell2024performance} demonstrated that in high-concurrency \acs{HTTP} server scenarios, a Docker container can process requests significantly faster because it can scale natively across multiple \acs{CPU} cores, whereas a single \acs{Wasm} instance operating under \acs{WASI}~P1 remains bottlenecked by sequential request processing. Furthermore, Spies and Mock found that single-threaded \acs{Wasm} applications perform approximately 14\% slower than native x86\_64 binaries due to sandbox bounds-checking overhead~\cite{spies2021evaluation}.
+\end{enumerate}
+
+By utilizing \acs{WASI} shims (such as \texttt{runwasi}~\cite{runwasi2024}), \acs{K8s} can now orchestrate these high-density \acs{Wasm} workloads directly alongside traditional Docker containers, establishing the precise technological foundation for the comparative analysis executed in this research.
