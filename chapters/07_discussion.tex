@@ -9,3 +9,18 @@ How the "deny-by-default" security posture of Wasm changes the cluster security 
 
 \section{Migration Recommendations}
 Guidelines for companies (like Akamai or Cloudflare customers) on when to switch to Wasm (e.g., high-scale serverless functions) versus staying with Docker (stateful monoliths).
+
+\section{Threats to Validity}
+\label{sec:threats_to_validity}
+
+Several design choices and environmental constraints limit the generalisability of the results reported in this thesis.
+
+\textbf{Single-node cluster.} All four variants run on a single two-vCPU Hetzner Cloud \acs{VM} sharing the same kernel, network stack, and physical CPU. In a production multi-node cluster, scheduling, inter-node networking latency, and \acs{NUMA} topology would introduce additional variance not captured here. The results therefore characterise single-pod, co-located performance rather than at-scale distributed behaviour.
+
+\textbf{Noisy-neighbour effects.} Although each benchmark run measures only one variant at a time, the load generator (k6) and the observability stack (Prometheus, Grafana) share the same host as the \acs{SUT}. CPU and memory pressure from these background processes may inflate latency measurements, particularly for the lower-throughput \acs{Wasm} variants where baseline system load represents a proportionally larger share of available resources.
+
+\textbf{Single workload type.} The current evaluation uses one \acs{CPU}-bound benchmark (the Sieve of Eratosthenes). The I/O-bound workload and the Volta Monte Carlo \acs{VaR} engine described in Section~\ref{sec:workload_design} have not yet been benchmarked. Workloads that are dominated by file I/O, database access, or inter-service communication may exhibit a substantially different performance profile---particularly for the \acs{Wasm} variants, where \acs{WASI}~Preview~1's lack of asynchronous I/O primitives is expected to impose additional penalties beyond those observed in the compute benchmark.
+
+\textbf{Thread visibility and CPU throttling.} As documented in Section~\ref{sec:k8s_deployment}, Go's \texttt{GOMAXPROCS} and Tokio's worker-thread count are both set to the number of \textit{visible} host cores (2) rather than the container's CPU limit (1 vCPU). The kernel enforces the limit via \acs{CFS} throttling, but the runtimes still attempt to schedule across two logical cores. This may give the Docker variants a modest advantage over the \acs{Wasm} variants, which are constrained to single-threaded execution regardless of visible core count. Future experiments should set \texttt{GOMAXPROCS=1} and \texttt{TOKIO\_WORKER\_THREADS=1} to fully isolate this variable.
+
+\textbf{JIT-only compilation.} Both \acs{Wasm} variants use \acs{WasmEdge}'s default \acs{JIT} compilation path. As noted in Section~\ref{sec:jit_vs_aot}, \acs{AOT} compilation narrows the performance gap with native code; the results reported here therefore represent a conservative lower bound on attainable \acs{Wasm} throughput. The trade-off is that \acs{JIT} preserves binary portability across architectures, which is the deployment model evaluated in this study.
