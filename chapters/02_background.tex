@@ -6,8 +6,7 @@ This chapter provides the foundational technical context required to evaluate th
 \section{Cloud Computing and Microservices}
 \label{sec:cloud_microservices}
 
-This section establishes the cloud computing context that motivates the need for lightweight execution environments studied in this thesis. It traces the paradigm evolution from \acs{IaaS} to \acs{FaaS} and then examines microservice architecture as the software design pattern that drove the demand for efficient, low-overhead container runtimes.
-
+This section establishes the cloud computing context that motivates the need for lightweight execution environments studied in this thesis. It traces the paradigm evolution from \acl{IaaS} (\acs{IaaS}) to \acl{FaaS} (\acs{FaaS}) and then examines microservice architecture as the software design pattern that drove the demand for efficient, low-overhead container runtimes.
 \subsection{The Evolution of Cloud Paradigms}
 The genesis of modern software deployment traces back to on-premises data centers, where organizations were solely responsible for the procurement, maintenance, and scaling of physical hardware. This capital-heavy model suffered from severe resource underutilization; servers were provisioned for peak load, leaving them idle during standard operations. The modern cloud computing era shifted the industry to a pay-as-you-go, scalable operational model, fundamentally altering how infrastructure is managed~\cite{mell2011nist}.
 
@@ -23,7 +22,7 @@ As cloud computing matured, the industry developed a ``Shared Responsibility Mod
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.8\textwidth]{figures/iaas_paas_faas_saas.pdf}
-    \caption{The Shared Responsibility Model across varying Cloud Computing Paradigms. Adapted from Mell and Grance~\cite{mell2011nist}}
+    \caption{The Shared Responsibility Model across varying Cloud Computing Paradigms. Adapted from Mazzeschi~\cite{mazzeschi2021cloudparadigms}}
     \label{fig:iaas_paas_faas_saas}
 \end{figure}
 
@@ -32,14 +31,14 @@ For the purposes of this research, \acs{SaaS} falls outside the scope of archite
 \subsection{Microservice Architecture}
 Microservice architecture emerged as the logical software design pattern for cloud-native deployment. Unlike traditional monolithic applications---where all business logic, user interfaces, and database connections are tightly coupled into a single executable---microservices decompose an application into a collection of small, independently deployable, and loosely coupled services that communicate over a network via language-agnostic \acp{API}~\cite{newman2015building}.
 
-This paradigm offers distinct advantages: development agility, localized fault isolation, and the ability to scale specific system bottlenecks independently. However, it introduces severe distributed system challenges. Managing network latency, data consistency, and the operational overhead of packaging and deploying hundreds of individual services necessitated the creation of entirely new virtualization and orchestration layers.
+This paradigm offers distinct advantages: development agility, localized fault isolation, and the ability to scale specific system bottlenecks independently. However, it introduces severe distributed system challenges. Managing network latency, data consistency, and the operational overhead of packaging and deploying hundreds of individual services necessitated the creation of entirely new virtualization and orchestration layers~\cite{newman2015building, burns2016borg}.
 
 The relevance of microservice architecture to this thesis is direct: the experimental benchmark in Chapter~\ref{chap:methodology} implements a stateless \acs{HTTP} microservice deployed in four variants within a Kubernetes cluster. The performance bottlenecks introduced by \acs{WASI} Preview~1's single-threaded I/O model are most acutely visible in microservice scenarios with concurrent request loads, making microservices the natural evaluation domain for this comparison.
 
 \section{Containerization and Orchestration}
 \label{sec:containerization}
 
-This section covers the containerization technologies and orchestration platform that form the deployment baseline compared in this thesis. It first contrasts \acp{VM} with containers to motivate Docker's design, then covers Docker's \acs{OCI} standardization, and finally describes how \ac{K8s} orchestrates containerized workloads at scale---the same platform used to run all four benchmark variants.
+This section covers the containerization technologies and orchestration platform that form the deployment baseline compared in this thesis. It first contrasts \acl{VM} (\acs{VM}) with containers to motivate Docker's design, then covers Docker's \acs{OCI} standardization, and finally describes how \ac{K8s} orchestrates containerized workloads at scale---the same platform used to run all four benchmark variants.
 
 \subsection{Virtual Machines vs.\ Containers}
 To solve the deployment complexity of microservices, the industry initially relied on \acp{VM}. However, \acp{VM} require a hypervisor to emulate physical hardware, atop which a complete guest \ac{OS} is installed. This results in gigabytes of memory overhead and startup times measured in minutes, making them inherently unsuitable for transient, rapidly scaling microservices.
