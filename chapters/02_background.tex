@@ -1,7 +1,7 @@
 \chapter{Background}
 \label{chap:background}
 
-This chapter provides the foundational technical context required to evaluate the comparative analysis presented in this thesis. It traces the evolution of computing infrastructure from on-premises hardware to modern cloud paradigms, details the mechanics of containerization and orchestration, and culminates in a comprehensive architectural breakdown of \ac{Wasm} as an emerging server-side execution environment. This background is organised into three sections: cloud computing paradigms and microservice architecture (\S\ref{sec:cloud_microservices}), containerization and Kubernetes orchestration (\S\ref{sec:containerization}), and the technical foundations of WebAssembly and its server-side ecosystem (\S\ref{sec:wasm}).
+This chapter provides the foundational technical context required to evaluate the comparative analysis presented in this thesis. It traces the evolution of computing infrastructure from on-premises hardware to modern cloud paradigms, details the mechanics of containerization and orchestration, and culminates in a comprehensive architectural breakdown of \ac{Wasm} as an emerging server-side execution environment. This background is organised into three sections: cloud computing paradigms and microservice architecture (\S\ref{sec:cloud_microservices}), containerization and Kubernetes orchestration (\S\ref{sec:containerization}), and the technical foundations of WebAssembly and \acs{WASI}---including the Component Model, available runtimes, and the \acs{K8s} integration landscape (\S\ref{sec:wasm}). Industry adoption and production deployments of server-side \acs{Wasm} are surveyed in \hyperref[chap:state_of_the_art]{Chapter~\ref{chap:state_of_the_art}}.
 
 \section{Cloud Computing and Microservices}
 \label{sec:cloud_microservices}
@@ -191,24 +191,6 @@ Table~\ref{tab:wasi_p1_vs_p2} summarises the key differences between the two ver
 \end{table}
 
 The experiments in this thesis target \acs{WASI} Preview~1 exclusively. This choice reflects the production-deployed state of the \acs{Wasm}+\acs{K8s} ecosystem at time of writing: \acs{WasmEdge}~0.14.x has only partial \acs{WASI}~P2 support, and the \texttt{containerd-wasm-shims}/\texttt{runwasi} \acs{K8s} integration does not yet support \acs{WASI}~P2 Component Model artifacts. Importantly, the code structure in this thesis is designed to ease the eventual transition: all four variants share the same \acs{HTTP} \acs{API} contract (\texttt{/prime}, \texttt{/health}), so migrating the \acs{Wasm} variants from \texttt{wasmedge\_wasi\_socket} to a \texttt{wasi:http}-compatible handler is a local implementation change, not a full redesign. The Component Model and \acs{WASI}~P2 are treated as future work in \hyperref[chap:discussion]{Chapter~\ref{chap:discussion}}.
-
-\subsection{Industry Adoption and Ecosystem}
-\label{sec:industry_landscape}
-This subsection maps the current production deployment landscape of server-side \acs{Wasm}. Understanding where \acs{Wasm} has already been deployed commercially is essential context for interpreting the benchmark results in Chapter~\ref{chap:evaluation} and for calibrating expectations about ecosystem maturity.
-
-\subsubsection{Edge Computing Providers}
-The first large-scale production deployments of server-side \acs{Wasm} occurred at edge computing providers, where cold-start density is a primary commercial constraint.
-
-\textbf{Cloudflare Workers}~\cite{cloudflare2024workers} runs \acs{Wasm} inside V8 Isolates---not a \acs{WASI} runtime---by embedding the browser's JavaScript engine at the network edge. Each Worker invocation receives a fresh V8 Isolate with sub-millisecond startup. This model proves that \acs{Wasm}'s density advantages are commercially viable, though it uses a different isolation mechanism than the \acs{WASI}-based server-side deployments studied in this thesis.
-
-\textbf{Fastly Compute}~\cite{fastly2024compute} originally built its edge computing platform on Lucet, a compiler and runtime developed internally. Lucet was deprecated in 2022 and replaced by Wasmtime, the Bytecode Alliance's reference runtime, which provides sub-millisecond instantiation and full \acs{WASI}~P1 support. Fastly's production deployment of Wasmtime at scale demonstrates the commercial maturity of the \acs{Wasm} runtime ecosystem.
-
-\subsubsection{Application Frameworks}
-\textbf{Fermyon Spin}~\cite{fermyon2024spin} is a developer-centric framework for building serverless \acs{Wasm} microservices. Spin uses a request-scoped execution model: a fresh \acs{Wasm} instance is created per \acs{HTTP} request and destroyed upon response. This model maximizes cold-start density and isolates request state, but is architecturally opposite to the persistent \acs{TCP} server approach used in this thesis. Spin targets \acs{WASI}~P1 and is actively migrating to \acs{WASI}~P2's \texttt{wasi:http} world.
-
-\textbf{WasmCloud}~\cite{wasmcloud2024} is an actor-model distributed application platform. Services are implemented as location-transparent actors that communicate over a \acs{NATS} message bus; the runtime injects ``capability providers'' for networking, databases, and other host resources at runtime without baking them into the actor binary. WasmCloud targets the \acs{WASI}~P2 Component Model and is sponsored by the \acs{CNCF}. Its distributed-systems orientation makes it a strong candidate for the Volta microservice architecture planned as future work in this thesis.
-
-\textbf{WasmEdge}~\cite{cncf2024wasmedge} is a \acs{CNCF} sandbox project since 2021. Unlike Spin or WasmCloud, \acs{WasmEdge} is a general-purpose runtime that supports long-running \acs{TCP} servers, multiple language targets (Rust, TinyGo, C/C++, Python), and a \acs{containerd} shim for \acs{K8s} \texttt{RuntimeClass} integration. These properties make it the runtime of choice for this thesis; the detailed selection rationale is presented in Section~\ref{sec:runtime_landscape}.
 
 \subsection{WebAssembly Runtimes: A Comparative Overview}
 \label{sec:runtime_landscape}

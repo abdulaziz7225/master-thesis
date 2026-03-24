@@ -1,0 +1,84 @@
+\chapter{Related Work}
+\label{chap:state_of_the_art}
+
+This chapter surveys the academic literature and industry evidence most directly relevant to the research questions of this thesis. Section~\ref{sec:academic_research} reviews quantitative performance studies comparing server-side \acs{Wasm} and container workloads, security analyses contrasting \acs{Wasm}'s isolation model with Docker's kernel-sharing model, and compiler strategy trade-offs identified in prior work. Section~\ref{sec:industry_landscape} surveys the current commercial deployment landscape of server-side \acs{Wasm} across edge computing providers and application frameworks. Section~\ref{sec:wasm_in_production} presents concrete production deployments and ecosystem maturity evidence. Technical background on the \acs{Wasm} Component Model, available runtimes, and the \acs{K8s} integration landscape is provided in \hyperref[chap:background]{Chapter~\ref{chap:background}}.
+
+\section{Academic Research and Benchmarks}
+\label{sec:academic_research}
+
+The following section surveys peer-reviewed and academic work that measures or analyses the performance, security, and ecosystem properties of server-side \acs{Wasm} relative to container-based alternatives. These studies provide the empirical baseline against which the results of this thesis are positioned and contextualised. The section is structured as follows: Section~\ref{sec:performance_studies} covers quantitative performance benchmarks; Section~\ref{sec:security_comparisons} examines security analyses; Section~\ref{sec:jit_vs_aot} discusses compiler strategy trade-offs documented in prior work.
+
+\subsection{Performance Studies}
+\label{sec:performance_studies}
+
+Several academic works have investigated the performance characteristics of server-side \acs{Wasm} and directly inform the research questions of this thesis. The studies below are grouped by the performance dimension they address: native-binary overhead, cold-start and density advantages, and throughput under concurrent load.
+
+\textit{Native-binary overhead.}\quad \textcite{jangda2019notsofast} performed a systematic analysis of \acs{Wasm} performance relative to native x86\_64 code across a broad set of benchmarks from the PolyBenchC suite. They found that \acs{Wasm} is on average 1.5$\times$ slower than native code, with the overhead attributable to \acs{SFI} bounds-checking, function pointer masking, and the inability of the \acs{Wasm} \acs{ABI} to exploit all available hardware registers. Separately, \textcite{spies2021evaluation} evaluated \acs{Wasm} compiled with \texttt{wasm32-wasi} in non-web environments and found that single-threaded, \acs{CPU}-bound workloads run approximately 14\% slower than equivalent native x86\_64 binaries~\cite{spies2021evaluation}. This overhead stems from the bounds-checking and indirect-call guards enforced at runtime by \acs{SFI}. Their study establishes an important baseline: the \acs{Wasm} runtime is not free of overhead even for compute-intensive tasks, though the gap shrinks considerably with \ac{AOT} compilation.
+
+\textit{Cold-start latency and image density.}\quad \textcite{long2023wasm} conducted a direct performance comparison between \acs{Wasm} and containerized workloads, demonstrating that \acs{Wasm} runtimes achieve at least a 10$\times$ improvement in cold-start latency over Docker for short-running workloads. This advantage is most pronounced in \acl{FaaS} scenarios where containers are created and destroyed frequently. \textcite{hall2021serverless} extended this finding to the serverless domain, showing that the \acs{Wasm} cold-start advantage translates into up to 90\% faster end-to-end response times for event-driven serverless functions~\cite{hall2021serverless}. Importantly, both of these cold-start advantages are primarily attributable to \acs{Wasm}'s dramatically smaller deployment artifacts rather than to fundamental differences in \ac{JIT} compilation speed alone.
+
+\textit{Concurrent throughput.}\quad The most directly comparable prior work to this thesis is the master's thesis by \textcite{sondell2024performance} at \acs{KTH} Royal Institute of Technology. Sondell benchmarked \acs{Wasm} containers against Docker containers for serverless \acs{HTTP} workloads and found a significant throughput collapse under concurrent load for the \acs{Wasm} variant. The root cause is identical to the finding documented in this thesis: \acs{WASI}~Preview~1 does not expose thread-spawning primitives to modules, leaving the \acs{HTTP} server constrained to processing one request at a time while Docker containers leverage native multi-core concurrency via goroutines or thread pools. Sondell's work uses a different runtime configuration and workload type; this thesis extends that line of inquiry with four implementation variants (two language families, two runtime targets), a dedicated \acs{CPU}-bound compute benchmark, and a structured developer experience assessment, providing complementary empirical coverage of the \acs{Wasm}/\acs{K8s} deployment space.
+
+\subsection{Security Comparisons}
+\label{sec:security_comparisons}
+
+The security architecture of \acs{Wasm}/\acs{WASI} has been studied in the context of multi-tenant cloud workloads, with analyses focusing on both the structural advantages of \acs{Wasm}'s isolation model and its residual attack surface.
+
+\textit{Container security risks.}\quad \textcite{combe2016docker} surveyed the security properties of Docker and found that the shared-kernel model is the primary structural risk in multi-tenant deployments. If a container escape vulnerability is exploited, the attacker gains code execution at the host kernel level, potentially compromising every container on the node. Shillaker and Pietzuch similarly documented the kernel-sharing threat model in the context of serverless isolation~\cite{shillaker2020faasm}: a single compromised container can expose the entire host to privilege escalation. \acs{Wasm}, by contrast, enforces \acs{SFI} at the runtime level: the module can only read and write within its allocated linear memory region, and any out-of-bounds access results in a deterministic, immediate trap. A module compromise therefore yields only control of that module's sandboxed linear memory, not host-level execution.
+
+\textit{Wasm binary security.}\quad \textcite{lehmann2020everythingold} analysed the binary security properties of \acs{Wasm} modules and found that, while the linear memory model successfully prevents classical memory-safety attacks (buffer overflows, use-after-free), it introduces a new class of confused-deputy vulnerabilities at the Wasm-host interface boundary. Specifically, if a host import (a function provided by the runtime to the \acs{Wasm} module) is overly permissive, an attacker with control over the module can abuse it to perform operations outside the intended capability scope. This finding is directly relevant to the experimental setup in this thesis: the use of \texttt{wasmedge\_wasi\_socket}, a \acs{WasmEdge}-specific extension that grants the module full \acs{TCP} socket access, is an example of a permissive host import. Fine-grained network capability restriction---the theoretical security advantage of \acs{WASI}'s deny-by-default model---is therefore not exercised in the benchmarks.
+
+\acs{WASI} extends the isolation model with a \ac{POLA}-based capability model: network sockets, files, and environment variables are only accessible if the host runtime explicitly grants them at startup. This ``deny-by-default'' posture is structurally more restrictive than Linux's permission model, though as the findings above illustrate, its practical security benefit depends on how conservatively host imports are defined.
+
+\subsection{JIT vs.\ AOT Compilation}
+\label{sec:jit_vs_aot}
+
+\acs{Wasm} runtimes offer two primary compilation strategies that directly affect the cold-start vs.\ throughput trade-off, and this choice has been studied in the context of both browser and server-side deployments.
+
+\ac{JIT} compilation---the default mode in \acs{WasmEdge}---translates the \texttt{.wasm} binary to native machine code at module load time. This preserves binary portability across \acs{ISA}s and keeps the deployment artifact small, at the cost of a one-time JIT overhead on first pod startup. \ac{AOT} compilation pre-translates the \texttt{.wasm} binary to a platform-specific native shared object before deployment, eliminating the JIT startup penalty entirely but tying the artifact to a specific architecture. \textcite{spies2021evaluation} showed that the performance gap between \acs{Wasm} and native code narrows considerably under \acs{AOT} compilation, suggesting that JIT overhead is a significant but avoidable contributor to the 14\% slowdown they observed. \acs{WasmEdge} supports \acs{AOT} via its \texttt{wasmedgec} \acs{CLI} tool.
+
+This thesis uses the \acs{JIT} path for both \acs{Wasm} variants to maintain binary portability and reproducibility across potential future cluster migrations. This is acknowledged as a conservative choice that may slightly disadvantage the \acs{Wasm} variants in the compute benchmark; \acs{AOT} compilation is left as a direction for future optimisation work.
+
+\section{Industry Adoption of Server-Side WebAssembly}
+\label{sec:industry_landscape}
+
+This section maps the current commercial deployment landscape of server-side \acs{Wasm}. Understanding where \acs{Wasm} has already been deployed at production scale provides essential context for interpreting the benchmark results in Chapter~\ref{chap:evaluation} and for calibrating expectations about ecosystem maturity.
+
+\subsection{Edge Computing Providers}
+
+The first large-scale production deployments of server-side \acs{Wasm} occurred at edge computing providers, where cold-start density and instantiation latency are primary commercial constraints.
+
+\textbf{Cloudflare Workers}~\cite{cloudflare2024workers} runs \acs{Wasm} inside V8 Isolates---not a \acs{WASI} runtime---by embedding the browser's JavaScript engine at the network edge. Each Worker invocation receives a fresh V8 Isolate with sub-millisecond startup across a network spanning 310+ cities in 120+ countries. This model proves that \acs{Wasm}'s density advantages are commercially viable at hyperscale, though the V8 Isolate isolation mechanism differs from the \acs{WASI}-based server-side deployments studied in this thesis.
+
+\textbf{Fastly Compute}~\cite{fastly2024compute} built its edge computing platform on Lucet, an \acs{AOT}-compiling \acs{Wasm} runtime developed internally. Rather than replacing Lucet outright, Fastly subsequently migrated its key innovations---the \acs{AOT} compilation pipeline and the pooling allocator---into Wasmtime, the Bytecode Alliance's reference runtime~\cite{fastly2020lucetwasm}. Fastly Compute now runs on Wasmtime in production, demonstrating both the commercial maturity of the \acs{Wasm} runtime ecosystem and a broader pattern of vertical implementations converging toward the shared Bytecode Alliance reference.
+
+\subsection{Application Frameworks and Platforms}
+
+\textbf{Fermyon Spin}~\cite{fermyon2024spin} is a developer-centric framework for building serverless \acs{Wasm} microservices. Spin uses a request-scoped execution model: a fresh \acs{Wasm} instance is created per \acs{HTTP} request and destroyed upon response. This model maximises cold-start density and isolates request state, but is architecturally opposite to the persistent \acs{TCP} server approach used in this thesis. Spin targets \acs{WASI}~P1 and is actively migrating to \acs{WASI}~P2's \texttt{wasi:http} world.
+
+\textbf{WasmCloud}~\cite{wasmcloud2024} is an actor-model distributed application platform. Services are implemented as location-transparent actors that communicate over a \acs{NATS} message bus; the runtime injects capability providers for networking, databases, and other host resources at launch time without baking them into the actor binary. WasmCloud targets the \acs{WASI}~P2 Component Model and is a \acs{CNCF}-sponsored project. Its distributed-systems orientation makes it a strong candidate for the Volta microservice architecture planned as future work in this thesis.
+
+\textbf{WasmEdge}~\cite{cncf2024wasmedge} is a general-purpose runtime that supports long-running \acs{TCP} servers, multiple language targets (Rust, TinyGo, C/C++, Python), and a \acs{containerd} shim for \acs{K8s} \texttt{RuntimeClass} integration. These properties make it the runtime of choice for this thesis; the detailed selection rationale is presented in Section~\ref{sec:runtime_landscape}.
+
+\section{Server-Side WebAssembly in Production}
+\label{sec:wasm_in_production}
+
+This section presents concrete evidence of server-side \acs{Wasm} deployments at production scale, focusing on quantifiable milestones and ecosystem governance signals that indicate the technology's maturity relative to the experimental deployment studied in this thesis.
+
+\subsection{Cloudflare Workers at Scale}
+
+Cloudflare Workers is the largest publicly documented deployment of server-side \acs{Wasm} to date~\cite{cloudflare2024workers}. The platform executes customer-authored \acs{Wasm} modules across 310+ points of presence globally, isolating each invocation in a V8 Isolate with cold-start overhead measured in single-digit milliseconds. Cloudflare's 2025 ``Shard and Conquer'' architecture further reduced cold starts to the point where 99.99\% of requests are served warm, effectively eliminating cold-start penalty as a user-visible phenomenon at their scale of operation.
+
+The relevance to this thesis is two-fold. First, the platform demonstrates that \acs{Wasm}'s density advantage---many isolated tenants per host, with rapid instantiation---is not merely theoretical but commercially proven at global scale. Second, the isolation mechanism (V8 Isolates rather than a \acs{WASI} runtime) highlights that production-grade \acs{Wasm} deployments can diverge significantly in their security and capability models; the \acs{WASI}-based approach evaluated in this thesis represents a different, \acs{K8s}-native deployment pattern.
+
+\subsection{Fastly and the Convergence to Wasmtime}
+
+Fastly's trajectory from Lucet to Wasmtime illustrates a broader pattern of ecosystem consolidation~\cite{fastly2020lucetwasm, fastly2024compute}. When Fastly open-sourced Lucet in 2019 as a production-grade \acs{AOT} \acs{Wasm} compiler and runtime, it represented the state of the art for serverless \acs{Wasm} performance. As the Bytecode Alliance's Wasmtime matured, Fastly contributed Lucet's key innovations---including the pooling instance allocator and \acs{AOT} ahead-of-time compilation pipeline---directly into the shared Wasmtime codebase, then migrated Fastly Compute to run on Wasmtime.
+
+This convergence is significant from an ecosystem perspective: even a well-funded, production-grade custom runtime found it strategically preferable to merge into the community reference implementation rather than maintain a divergent fork. The result is a stronger shared base for all \acs{Wasm} runtimes and evidence that the Bytecode Alliance governance model produces long-term ecosystem stability---a factor relevant to any organisation evaluating a migration to \acs{Wasm}-based infrastructure.
+
+\subsection{CNCF Ecosystem Maturity}
+
+The governance investment by the \acs{CNCF} in server-side \acs{Wasm} projects provides a quantifiable maturity signal. \acs{WasmEdge} was accepted into the \acs{CNCF} Sandbox on 28 April 2021~\cite{cncf2024wasmedge}---the same maturity track used by Kubernetes, containerd, and Prometheus before they graduated. SpinKube, the \acs{K8s} operator for running Fermyon Spin applications natively, entered the \acs{CNCF} Sandbox on 21 January 2025~\cite{spinkube2024}. runwasi, the Rust library for writing containerd shims for \acs{Wasm} workloads, is actively maintained under the containerd organisation and is used in production by both K3s~\cite{k3s2024rancher} and Microsoft's Azure Kubernetes Service to execute \acs{Wasm} workloads via \texttt{RuntimeClass}~\cite{runwasi2024}. The \acs{CNCF} TAG-Runtime \acs{Wasm} Working Group~\cite{cncf2024tagruntime} was chartered to define best practices for \acs{Wasm} as a first-class cloud-native workload type alongside \acs{OCI} containers.
+
+Collectively, these governance milestones indicate that server-side \acs{Wasm} has crossed from a research curiosity to an infrastructure category with active stewardship by the same foundation that governs the broader cloud-native ecosystem. This is directly relevant to this thesis: \acs{WasmEdge} and K3s---both \acs{CNCF}-affiliated projects---are the two primary runtime components used in the experimental cluster.
