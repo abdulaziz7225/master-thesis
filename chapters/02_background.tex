@@ -33,7 +33,7 @@ Microservice architecture emerged as the logical software design pattern for clo
 
 This paradigm offers distinct advantages: development agility, localized fault isolation, and the ability to scale specific system bottlenecks independently. However, it introduces severe distributed system challenges. Managing network latency, data consistency, and the operational overhead of packaging and deploying hundreds of individual services necessitated the creation of entirely new virtualization and orchestration layers~\cite{newman2015building, burns2016borg}.
 
-The relevance of microservice architecture to this thesis is direct: the experimental benchmark in Chapter~\ref{chap:methodology} implements a stateless \acs{HTTP} microservice deployed in four variants within a Kubernetes cluster. The performance bottlenecks introduced by \acs{WASI} Preview~1's single-threaded I/O model are most acutely visible in microservice scenarios with concurrent request loads, making microservices the natural evaluation domain for this comparison.
+The relevance of microservice architecture to this thesis is direct: the experimental benchmark in Chapter~\ref{chap:methodology} implements a stateless \acs{HTTP} microservice deployed in four variants within a Kubernetes cluster. The throughput and latency differences between the \acs{WASI} Preview~2~(P2) request-handler model (SpinKube) and Docker's goroutine/async model are most acutely visible under concurrent request loads, making microservices the natural evaluation domain for this comparison.
 
 \section{Containerization and Orchestration}
 \label{sec:containerization}
@@ -147,17 +147,17 @@ If a \acs{Wasm} module needs to access a configuration file, it cannot invoke a 
 
 \subsection{Architectural Evolution: From POSIX to the Component Model}
 \label{sec:component_model}
-This subsection traces the evolution from \acs{WASI} Preview~1---the version used in this thesis---to the WebAssembly Component Model (\acs{WASI} Preview~2), explaining both why Preview~1 was chosen for the current experiments and what the transition to Preview~2 will resolve.
+This subsection traces the evolution from \acs{WASI}~P1---the version used in this thesis---to the WebAssembly Component Model (\acs{WASI}~P2), explaining both why Preview~1 was chosen for the current experiments and what the transition to Preview~2 will resolve.
 
 The initial iteration of \acs{WASI} (Preview~1) was heavily modeled after standard \acs{POSIX} interfaces, focusing on file descriptors, environment variables, and standard I/O streams. While effective for simple command-line tools and basic microservices, this \acs{POSIX}-centric approach introduced friction when handling complex, multi-language cloud-native interactions.
 
-\subsubsection{The Interoperability Problem in WASI Preview~1}
-\acs{WASI} Preview~1's memory model is a significant limitation for composing services written in multiple languages. When two \acs{Wasm} modules need to share data, they must agree on a shared linear memory layout---effectively a manual, type-unsafe \acs{ABI} contract. This is analogous to passing raw C structs across shared memory boundaries: fragile, language-specific, and a source of subtle bugs as either module evolves~\cite{bytecodealliance2024componentmodel}.
+\subsubsection{The Interoperability Problem in WASI P1}
+\acs{WASI}~P1's memory model is a significant limitation for composing services written in multiple languages. When two \acs{Wasm} modules need to share data, they must agree on a shared linear memory layout---effectively a manual, type-unsafe \acs{ABI} contract. This is analogous to passing raw C structs across shared memory boundaries: fragile, language-specific, and a source of subtle bugs as either module evolves~\cite{bytecodealliance2024componentmodel}.
 
 This friction is especially limiting for the microservice use case. A microservice architecture ideally allows individual services to be implemented in the most suitable language. \acs{WASI}~P1 forces all cross-module communication through either network \acs{HTTP} calls---which carry full serialization and network overhead---or through the brittle shared-memory \acs{ABI} described above.
 
 \subsubsection{The Component Model: WIT and Typed Interfaces}
-To address this, the \acs{Wasm} ecosystem is currently transitioning to the WebAssembly Component Model (\acs{WASI} Preview~2 and Preview~3)~\cite{bytecodealliance2024componentmodel}. \ac{WIT} is a typed, language-agnostic interface definition language that allows developers to express function signatures and data types at a high level, independently of any specific language's memory layout. The Component Model shifts \acs{WASI} from a low-level \acs{POSIX} \acs{API} to a high-level, language-agnostic interface system utilizing \acs{WIT}.
+To address this, the \acs{Wasm} ecosystem is currently transitioning to the WebAssembly Component Model (\acs{WASI}~P2 and Preview~3)~\cite{bytecodealliance2024componentmodel}. \ac{WIT} is a typed, language-agnostic interface definition language that allows developers to express function signatures and data types at a high level, independently of any specific language's memory layout. The Component Model shifts \acs{WASI} from a low-level \acs{POSIX} \acs{API} to a high-level, language-agnostic interface system utilizing \acs{WIT}.
 
 A \acs{Wasm} Component is a self-describing unit that declares its capabilities through \acs{WIT} interfaces. When two components are composed---either statically at build time or dynamically at runtime---the \acs{Wasm} runtime validates that interface contracts are satisfied and generates the necessary glue code to safely pass complex types (strings, records, variants, lists) across component boundaries without sharing linear memory. This is conceptually similar to \ac{gRPC}/Protobuf for inter-service communication, but with zero network overhead: the call happens in-process between two sandboxed modules. This advancement allows discrete \acs{Wasm} components---potentially written in entirely different source languages---to natively interoperate, laying the foundation for highly modular, secure, and dynamically composable microservice architectures.
 
@@ -166,52 +166,54 @@ The Component Model enables a ``nano-process'' architecture where fine-grained \
 
 This architectural model is particularly compelling for the microservice domain: it retains the isolation properties of separate services (each component has its own linear memory, capabilities, and sandbox) while recovering the performance characteristics of in-process function calls. Whether the resulting latency and throughput advantages materialize in production deployments is an open research question beyond the scope of this thesis.
 
-\subsubsection{WASI Preview~2 Status and Relevance to This Thesis}
-\acs{WASI} Preview~2 was ratified by the Bytecode Alliance in February 2024~\cite{clark2023preview2}. Its stable interface worlds include \texttt{wasi:cli}, \texttt{wasi:filesystem}, \texttt{wasi:http}, \texttt{wasi:sockets}, and \texttt{wasi:io/poll} (the async I/O poll interface). The \texttt{wasi:http} world in particular provides a fully asynchronous \acs{HTTP} handler interface that directly resolves the single-threaded bottleneck documented in this thesis: async \acs{HTTP} frameworks targeting \texttt{wasi:http} can interleave requests without blocking, enabling multi-request concurrency on a single-threaded event loop.
+\subsubsection{WASI P2 Status and Relevance to This Thesis}
+\acs{WASI}~P2 was ratified by the Bytecode Alliance in February 2024~\cite{clark2023preview2}. Its stable interface worlds include \texttt{wasi:cli}, \texttt{wasi:filesystem}, \texttt{wasi:http}, \texttt{wasi:sockets}, and \texttt{wasi:io/poll} (the async I/O poll interface). The \texttt{wasi:http} world in particular provides a fully asynchronous \acs{HTTP} handler interface that directly resolves the single-threaded bottleneck documented in this thesis: async \acs{HTTP} frameworks targeting \texttt{wasi:http} can interleave requests without blocking, enabling multi-request concurrency on a single-threaded event loop.
 
 Table~\ref{tab:wasi_p1_vs_p2} summarises the key differences between the two versions.
 
 \begin{table}[htbp]
     \centering
-    \caption{Key differences between \acs{WASI} Preview~1 and Preview~2}
+    \caption{Key differences between \acs{WASI}~P1 and P2}
     \label{tab:wasi_p1_vs_p2}
     \adjustbox{max width=\linewidth}{%
     \begin{tabular}{lll}
         \hline
-        \textbf{Aspect} & \textbf{WASI Preview~1} & \textbf{WASI Preview~2 (Component Model)} \\
+        \textbf{Aspect} & \textbf{WASI P1} & \textbf{WASI P2 (Component Model)} \\
         \hline
         Interface style    & POSIX-like (file descriptors) & WIT typed interfaces \\
         HTTP server        & No standard; runtime-specific extensions & \texttt{wasi:http} async handler \\
         Concurrency        & Single-threaded I/O & Event-driven async I/O \\
         Cross-language     & Brittle shared-memory ABI & WIT composability, type-safe \\
         Multi-module composition & Network calls or raw memory & In-process WIT function calls \\
-        Production readiness & Widely deployed (this thesis) & Ratified Feb 2024; partial runtime support \\
+        Production readiness & Widely deployed (see Appendix~\ref{app:wasmedge_p1}) & Ratified Feb 2024; used in this thesis (SpinKube) \\
         \hline
     \end{tabular}}
 \end{table}
 
-The experiments in this thesis target \acs{WASI} Preview~1 exclusively. This choice reflects the production-deployed state of the \acs{Wasm}+\acs{K8s} ecosystem at time of writing: \acs{WasmEdge}~0.14.x has only partial \acs{WASI}~P2 support, and the \texttt{containerd-wasm-shims}/\texttt{runwasi} \acs{K8s} integration does not yet support \acs{WASI}~P2 Component Model artifacts. Importantly, the code structure in this thesis is designed to ease the eventual transition: all four variants share the same \acs{HTTP} \acs{API} contract (\texttt{/prime}, \texttt{/health}), so migrating the \acs{Wasm} variants from \texttt{wasmedge\_wasi\_socket} to a \texttt{wasi:http}-compatible handler is a local implementation change, not a full redesign. The Component Model and \acs{WASI}~P2 are treated as future work in \hyperref[chap:discussion]{Chapter~\ref{chap:discussion}}.
+The primary benchmark variants use \acs{WASI}~P2 via SpinKube/Wasmtime (Cranelift \acs{JIT}). The \acs{WASI}~P2 Component Model's \texttt{wasi:http/incoming-handler} interface eliminates the proprietary socket workarounds required by \acs{WASI}~P1 (see Appendix~\ref{app:wasmedge_p1} for the \acs{WASI}~P1 ecosystem constraints and historical benchmark results). An acknowledged confounding variable remains: switching from \acs{WASI}~P1 (WasmEdge/\acs{LLVM}) to \acs{WASI}~P2 (SpinKube/Wasmtime/Cranelift) changes both the \acs{WASI} version \emph{and} the \acs{JIT} backend simultaneously, as there is no mature \acs{WASI}~P2 \acs{HTTP} framework for \acs{WasmEdge}. The full 4-variant primary matrix is described in \hyperref[chap:methodology]{Chapter~\ref{chap:methodology}} and the runtime selection rationale is detailed in \S\ref{sec:runtime_landscape}.
 
 \subsection{WebAssembly Runtimes: A Comparative Overview}
 \label{sec:runtime_landscape}
-This subsection surveys the major server-side \acs{Wasm} runtimes and justifies the selection of \acs{WasmEdge} for the experiments in this thesis. Runtime selection is a non-trivial decision: each runtime makes different trade-offs between \acs{WASI} compliance, \acs{K8s} integration, compilation strategy, and language support.
+This subsection surveys the major server-side \acs{Wasm} runtimes and justifies the selection of SpinKube/Wasmtime for the experiments in this thesis. Runtime selection is a non-trivial decision: each runtime makes different trade-offs between \acs{WASI} compliance, \acs{K8s} integration, compilation strategy, and language support.
 
-The server-side \acs{Wasm} ecosystem includes several runtimes with distinct design philosophies, performance characteristics, and \acs{K8s} integration capabilities. Table~\ref{tab:wasm_runtimes} provides a comparative overview of the major runtimes evaluated before selecting \acs{WasmEdge} for this thesis.
+The server-side \acs{Wasm} ecosystem includes several runtimes with distinct design philosophies, performance characteristics, and \acs{K8s} integration capabilities. Table~\ref{tab:wasm_runtimes} provides a comparative overview of the major runtimes evaluated before selecting SpinKube (Spin/Wasmtime) for this thesis.
 
 \begin{table}[htbp]
     \centering
     \caption{Comparative overview of major \acs{Wasm} runtimes considered for this thesis}
     \label{tab:wasm_runtimes}
     \adjustbox{max width=\linewidth}{%
-    \begin{tabular}{llllll}
+    \begin{tabular}{lllllll}
         \hline
-        \textbf{Runtime} & \textbf{Backend} & \textbf{\acs{WASI}~P1} & \textbf{\acs{WASI}~P2} & \textbf{\acs{K8s} Shim} & \textbf{Primary Use Case} \\
+        \textbf{Runtime} & \textbf{Backend} & \textbf{\acs{WASI}~P1} & \textbf{\acs{WASI}~P2} & \textbf{\acs{K8s} Shim} & \textbf{Primary Use Case} & \textbf{Role in Thesis} \\
         \hline
-        Wasmtime   & Cranelift    & \checkmark & \checkmark & runwasi        & Reference, server-side \\
-        Wasmer     & Cranelift/LLVM & \checkmark & Partial  & Yes            & Edge, embedded \\
-        \acs{WasmEdge}   & LLVM         & \checkmark & Partial    & crun/containerd & Cloud-native, \acs{TCP} \\
-        WAMR       & AOT/JIT/Interp & \checkmark & Partial  & ---            & Embedded, IoT \\
-        wazero     & Go native    & \checkmark & ---        & ---            & Go embedding \\
+        \acs{WasmEdge}   & LLVM         & \checkmark & Partial    & crun             & Cloud-native, \acs{TCP} & \textbf{Optional (Appendix B)} \\
+        Spin/SpinKube    & Cranelift    & ---        & \checkmark & containerd-shim-spin & \acs{HTTP} handler P2 & \textbf{Selected (Primary)} \\
+        Wasmtime   & Cranelift    & \checkmark & \checkmark & runwasi          & Reference, server-side & TinyGo P1 gap \\
+        Wasmer     & Cranelift/LLVM & \checkmark & Partial  & Yes              & Edge, embedded        & Proprietary (WASIX) \\
+        WAMR       & AOT/JIT/Interp & \checkmark & Partial  & ---              & Embedded, IoT         & No K8s shim \\
+        wazero     & Go native    & \checkmark & ---        & ---              & Go embedding          & Library only \\
+        WasmCloud  & Cranelift    & ---        & \checkmark & --- (platform)   & Actor/NATS distributed & NATS overhead \\
         \hline
     \end{tabular}}
 \end{table}
@@ -224,18 +226,21 @@ The server-side \acs{Wasm} ecosystem includes several runtimes with distinct des
 
 \textbf{wazero} is a pure-Go \acs{Wasm} runtime with zero \acs{CGO} dependencies. It is ideal for embedding \acs{Wasm} inside Go applications but does not have a \acs{K8s} containerd shim.
 
-\subsubsection{Why WasmEdge Was Chosen}
+\subsubsection{Why SpinKube Was Chosen}
 
-The runtime selection process evaluated all runtimes in Table~\ref{tab:wasm_runtimes} against four non-negotiable constraints derived from the thesis experimental requirements:
+The runtime selection process evaluated all runtimes in Table~\ref{tab:wasm_runtimes} against five criteria derived from the thesis experimental requirements:
 
 \begin{enumerate}
-    \item \textbf{Long-running \acs{TCP} server support:} The benchmark services run as persistent \acs{HTTP} servers, not request-scoped functions. The runtime must support a blocking \texttt{accept()} loop or equivalent socket model.
-    \item \textbf{Multi-language support:} The experimental design requires both Rust and a Go-family language (TinyGo) to compile to and execute correctly on the same runtime.
-    \item \textbf{Kubernetes \acs{RuntimeClass} integration:} The runtime must have a \acs{containerd} shim enabling standard \acs{K8s} \texttt{RuntimeClass}-based pod scheduling without high-level operators.
-    \item \textbf{\acs{CNCF} credibility:} As an academic research project, the runtime must have recognised open-source governance to ensure reproducibility and long-term availability.
+    \item \textbf{Standardised \acs{WASI}~P2 \acs{HTTP} interface:} SpinKube implements \texttt{wasi:http/incoming-handler} from the \acs{WASI}~P2 Component Model. This eliminates the proprietary socket \acs{ABI} required by \acs{WASI}~P1 (e.g.\ \texttt{wasmedge\_wasi\_socket}, \texttt{//go:wasmimport} socket directives)---no custom server code required. Note: TinyGo's \texttt{-target=wasip2} cannot be used (it hardwires \texttt{wasi:cli/command}); the Spin Go \acs{SDK} (\texttt{github.com/spinframework/spin-go-sdk/v2}, \texttt{-target=wasip1}) provides \texttt{spinhttp.Handle()} instead.
+    \item \textbf{Wasmtime/Cranelift backend:} Spin embeds Wasmtime, the Bytecode Alliance reference implementation with the most complete \acs{WASI}~P2 Component Model support. Cranelift's \acs{JIT} provides competitive performance without the \acs{LLVM} compilation overhead present in \acs{WasmEdge}.
+    \item \textbf{\acs{CNCF} governance:} SpinKube was accepted as a \acs{CNCF} Sandbox project in January~2025, providing comparable open-source governance to \acs{WasmEdge} (\acs{CNCF} graduated). Reproducibility and long-term availability are ensured.
+    \item \textbf{First-class language support:} The Spin \acs{SDK} for Rust (\texttt{spin-sdk~=~"5.2.0"}) provides a \texttt{\#[http\_component]} macro generating a standards-compliant \acs{WASI}~P2 component with no \texttt{wasmedge\_wasi\_socket} dependency. The Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}) provides \texttt{spinhttp.Handle()} with standard \texttt{net/http} types---identical handler signatures to the Docker variants.
+    \item \textbf{Direct \acs{HTTP}-in/\acs{HTTP}-out model:} Unlike \acs{WasmCloud}, which routes every request through a \acs{NATS} message broker (adding a network hop that contaminates latency measurements), SpinKube's request-handler model is structurally closest to a Docker \acs{HTTP} microservice, making it the scientifically fairest \acs{WASI}~P2 comparison point.
 \end{enumerate}
 
-\acs{WasmEdge} satisfies all four constraints. Wasmtime also satisfies constraints 1, 3, and 4 but has less mature TinyGo socket support under \acs{WASI}~P1 at the time of implementation. SpinKube and WasmCloud were rejected because they introduce abstraction layers (the Spin framework and the \acs{NATS} broker, respectively) that would confound raw performance measurements.
+For historical context on the \acs{WasmEdge}/\acs{WASI}~P1 selection rationale, the four binding constraints that originally forced \acs{WasmEdge}, and the \acs{WASI}~P1 benchmark results, see Appendix~\ref{app:wasmedge_p1}.
+
+The taxonomy of all evaluated tools---runtimes, shims, frameworks, and cloud platforms---is illustrated in Figure~\ref{fig:wasm_k8s_taxonomy}.
 
 \subsection{WebAssembly in Kubernetes}
 \label{sec:wasm_k8s}
@@ -253,24 +258,27 @@ The integration of \acs{Wasm} into \acs{K8s} has evolved through several distinc
 
 Several higher-level operators have been developed to simplify the operational experience of running \acs{Wasm} workloads on \acs{K8s}.
 
-\textbf{SpinKube}~\cite{spinkube2024} combines the \texttt{runwasi} shim with the Fermyon Spin framework, adding a \texttt{SpinApp} \acs{CRD} that manages the lifecycle of Spin-based \acs{Wasm} applications. As of 2024, SpinKube is the most production-ready option for running \acs{WASI}~P2-compatible \acs{Wasm} workloads on \acs{K8s}.
+\textbf{SpinKube}~\cite{spinkube2024} ships a dedicated containerd shim (\texttt{containerd-shim-spin-v2}) that embeds the Spin runtime, which in turn embeds Wasmtime/Cranelift. It adds a \texttt{SpinApp} \acs{CRD} that manages the lifecycle of Spin-based \acs{Wasm} applications. SpinKube was accepted as a \acs{CNCF} Sandbox project in January 2025. It is the selected \acs{Wasm} framework for the primary benchmark variants in this thesis (\texttt{spin/rust}, \texttt{spin/tinygo}). An important distinction: \textbf{Spin uses Wasmtime, not \acs{WasmEdge}}---relative to the optional \acs{WASI}~P1 variants (Appendix~\ref{app:wasmedge_p1}), SpinKube introduces two simultaneous changes: the \acs{WASI} version (P1~$\to$~P2) and the \acs{JIT} backend (\acs{WasmEdge}/\acs{LLVM}~$\to$~Wasmtime/Cranelift). This is an acknowledged confounding variable documented in \hyperref[chap:discussion]{Chapter~\ref{chap:discussion}}.
 
-\textbf{WasmCloud Operator} bridges \acs{K8s} scheduling with the WasmCloud lattice, routing pod scheduling decisions to WasmCloud's \acs{NATS}-based actor runtime. This enables location-transparent actor deployment across hybrid cloud environments.
+\textbf{WasmCloud Operator} bridges \acs{K8s} scheduling with the WasmCloud lattice, routing pod scheduling decisions to WasmCloud's \acs{NATS}-based actor runtime. WasmCloud was evaluated and rejected for the \acs{WASI}~P2 variants: its \acs{NATS} broker adds a network hop that contaminates latency measurements, making a direct performance comparison against Docker \acs{HTTP} microservices scientifically unsound.
 
-\textbf{KWasm} is a \acs{K8s} operator that automates the installation of \acs{Wasm} runtime shims on cluster nodes via a DaemonSet, replacing the manual cloud-init bootstrap approach used in this thesis.
+\textbf{KWasm} is a \acs{K8s} operator that automates the installation of \acs{Wasm} runtime shims on cluster nodes via a DaemonSet, replacing the manual cloud-init bootstrap approach. KWasm is a meta-tool (shim installer), not a runtime; it was not used in this thesis.
 
-\textbf{This thesis uses none of these operators.} Raw \texttt{RuntimeClass} + standard \texttt{Deployment} manifests were chosen deliberately to minimize abstraction layers and ensure that the benchmark results reflect the performance of the underlying \acs{Wasm} runtime, not the overhead of a higher-level framework.
+\textbf{For the primary \acs{WASI}~P2 variants (wasm-rust, wasm-tinygo)}, the \texttt{SpinApp} \acs{CRD} (managed by the SpinOperator) is used, as it is the canonical deployment mechanism for SpinKube applications. \textbf{For the optional \acs{WASI}~P1 variants} (see Appendix~\ref{app:wasmedge_p1}), raw \texttt{RuntimeClass} + standard \texttt{Deployment} manifests with \acs{OCI} annotations are used.
 
 \subsubsection{RuntimeClass: The Bridge Between Paradigms}
 
-The \acs{K8s} \texttt{RuntimeClass} \acs{API} is the key mechanism that enables \acs{Wasm} and Docker workloads to coexist in the same cluster. A \texttt{RuntimeClass} object maps a handler name (e.g., \texttt{wasmedge}) to a registered containerd runtime plugin. When a pod specifies \texttt{spec.runtimeClassName: wasmedge}, the kubelet instructs containerd to use the registered \acs{WasmEdge} handler rather than the default \texttt{runc} path.
+The \acs{K8s} \texttt{RuntimeClass} \acs{API} is the key mechanism that enables \acs{Wasm} and Docker workloads to coexist in the same cluster. A \texttt{RuntimeClass} object maps a handler name to a registered containerd runtime plugin. When a pod specifies \texttt{spec.runtimeClassName}, the kubelet instructs containerd to use the corresponding handler rather than the default \texttt{runc} path.
 
-This mechanism allows the benchmark deployments in this thesis to use structurally identical \texttt{Deployment} manifests for both \acs{Wasm} and Docker variants---the only differences being the \texttt{runtimeClassName} field and two \acs{OCI} annotations:
+This thesis registers the following \texttt{RuntimeClass} objects:
+
 \begin{itemize}
-  \item \texttt{run.oci.handler: wasmedge}
-  \item \texttt{module.wasm.image/variant: compat}
+  \item \texttt{wasmtime-spin} --- maps to \texttt{containerd-shim-spin-v2}~v0.17.0 (SpinKube), which embeds Spin and Wasmtime/Cranelift. Used by the \acs{WASI}~P2 primary variants (\texttt{spin/rust}, \texttt{spin/tinygo}) via \texttt{SpinApp} \acs{CRD} resources managed by the SpinOperator. This is the default \acs{Wasm} \texttt{RuntimeClass}.
+
+  \item \texttt{wasmedge} (optional) --- maps to \texttt{crun}~v1.22 compiled \texttt{--with-wasmedge}, available when \texttt{ENABLE\_WASMEDGE=true} is set during cluster provisioning. Used only for the optional \acs{WASI}~P1 comparison (see Appendix~\ref{app:wasmedge_p1}).
 \end{itemize}
-\noindent The complete \acs{K8s} configuration is detailed in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
+
+\noindent The complete \acs{K8s} configuration for all four primary variants is detailed in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
 
 \subsection{Wasm vs.\ Traditional Containers}
 Applying \acs{Wasm} and \acs{WASI} to the server yields a deployment artifact that sits functionally between a traditional \ac{VM} and an \acs{OCI} container, offering unique operational characteristics:
@@ -278,7 +286,38 @@ Applying \acs{Wasm} and \acs{WASI} to the server yields a deployment artifact th
 \begin{enumerate}
     \item \textbf{Cold Start and Footprint:} Traditional \acs{OCI} containers bundle an \acs{OS} userland, frequently resulting in image sizes exceeding 100\,MB and startup times measured in seconds. A \acs{Wasm} module contains only the compiled application logic. \acs{Wasm} binaries are typically just a few megabytes and can be instantiated by a host runtime in microseconds. \textcite{long2023wasm} demonstrated that \acs{Wasm} runtimes can perform at least 10$\times$ faster than Docker from a cold start for short-running workloads. Hall and Ramachandran further verified that \acs{Wasm}'s improved cold start times lead to up to 90\% faster response times for basic serverless tasks~\cite{hall2021serverless}.
     \item \textbf{Security and Density:} \acs{Wasm} utilizes \acs{SFI}. If a \acs{Wasm} module is compromised, the attacker only controls the isolated linear memory sandbox. Because \acs{Wasm} modules do not require full \acs{OS} process overhead, the minimal memory footprint allows \acs{K8s} nodes to achieve exponentially higher workload density.
-    \item \textbf{Performance Trade-offs:} Despite its advantages in density and initialization, \acs{Wasm} presents concurrency constraints in its \acs{WASI} Preview~1 incarnation. \acs{Wasm} itself has a ratified Threads proposal~\cite{wasmthreadsproposal} supported across all major browsers and runtimes, but \acs{WASI} Preview~1 does not expose thread-spawning primitives to server-side \acs{Wasm} modules, leaving them constrained to single-threaded execution. \textcite{sondell2024performance} demonstrated that in high-concurrency \acs{HTTP} server scenarios, a Docker container can process requests significantly faster because it can scale natively across multiple \acs{CPU} cores, whereas a single \acs{Wasm} instance operating under \acs{WASI}~P1 remains bottlenecked by sequential request processing. Furthermore, Spies and Mock found that single-threaded \acs{Wasm} applications perform approximately 14\% slower than native x86\_64 binaries due to sandbox bounds-checking overhead~\cite{spies2021evaluation}.
+    \item \textbf{Performance Trade-offs:} Despite its advantages in density and initialization, \acs{Wasm} presents concurrency constraints in its \acs{WASI}~P1 incarnation. \acs{Wasm} itself has a ratified Threads proposal~\cite{wasmthreadsproposal} supported across all major browsers and runtimes, but \acs{WASI}~P1 does not expose thread-spawning primitives to server-side \acs{Wasm} modules, leaving them constrained to single-threaded execution. \textcite{sondell2024performance} demonstrated that in high-concurrency \acs{HTTP} server scenarios, a Docker container can process requests significantly faster because it can scale natively across multiple \acs{CPU} cores, whereas a single \acs{Wasm} instance operating under \acs{WASI}~P1 remains bottlenecked by sequential request processing. Furthermore, Spies and Mock found that single-threaded \acs{Wasm} applications perform approximately 14\% slower than native x86\_64 binaries due to sandbox bounds-checking overhead~\cite{spies2021evaluation}.
 \end{enumerate}
 
 By utilizing \acs{WASI} shims (such as \texttt{runwasi}~\cite{runwasi2024}), \acs{K8s} can now orchestrate these high-density \acs{Wasm} workloads directly alongside traditional Docker containers, establishing the precise technological foundation for the comparative analysis executed in this research.
+
+\subsection{Wasm Ecosystem Taxonomy}
+\label{sec:wasm_taxonomy}
+
+The server-side \acs{Wasm} ecosystem comprises overlapping layers of runtimes, standards, \acs{K8s} shims, application frameworks, and cloud platforms. Figure~\ref{fig:wasm_k8s_taxonomy} maps these layers and identifies where each evaluated tool sits in the stack. Tools are colour-coded by their role in this thesis: green indicates tools used in the experiment, amber indicates tools evaluated and rejected with documented rationale, and grey indicates tools outside the scope of this research.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figures/wasm_kubernetes_stack_taxonomy.pdf}
+    \caption{Five-layer taxonomy of the server-side \acs{Wasm} ecosystem on Kubernetes.
+    Layer~1: standalone \acs{Wasm} runtimes with their \acs{JIT} backends.
+    Layer~2: \acs{WASI} standard versions that runtimes implement.
+    Layer~3: containerd shims that bridge \acs{K8s} pod scheduling to \acs{Wasm} runtimes.
+    Layer~4: \acs{HTTP} application frameworks built on top of shims.
+    Layer~5: managed cloud and edge platforms.
+    Green = used in this thesis; Amber = evaluated and rejected; Grey = out of scope.
+    Source: \texttt{figures/sources/wasm\_kubernetes\_stack\_taxonomy.tex}.}
+    \label{fig:wasm_k8s_taxonomy}
+\end{figure}
+
+The key architectural relationships visible in Figure~\ref{fig:wasm_k8s_taxonomy} are:
+
+\begin{itemize}
+    \item \textbf{Wasmtime} (Layer~1) is the \acs{WASI}~P2 reference implementation and underpins both the \texttt{containerd-shim-spin-v2} shim (Layer~3) and the Fermyon Spin framework (Layer~4). Crucially, \textbf{Spin uses Wasmtime internally, not \acs{WasmEdge}} --- a point of frequent confusion that is especially consequential for this thesis, because the \acs{WASI}~P2 variants therefore run on a different \acs{JIT} backend than the \acs{WASI}~P1 variants.
+
+    \item \textbf{\acs{WasmEdge}} (Layer~1, optional) connects to Layer~3 via \texttt{crun}~v1.22 compiled \texttt{--with-wasmedge}. This path is available for optional \acs{WASI}~P1 comparison when \texttt{ENABLE\_WASMEDGE=true} is set during cluster provisioning; it is not used in the primary 4-variant experiment. See Appendix~\ref{app:wasmedge_p1} for \acs{WASI}~P1 implementation details and benchmark results.
+
+    \item \textbf{KWasm} (Layer~3) is a shim installer (DaemonSet-based), not itself a \acs{Wasm} runtime. It was evaluated and rejected in favour of a manual cloud-init bootstrap to minimise abstraction layers.
+
+    \item \textbf{WasmCloud} (Layer~4) was rejected for the \acs{WASI}~P2 variants because its \acs{NATS} actor model routes every \acs{HTTP} request through a message broker, adding latency that would confound the \acs{Wasm} vs.\ Docker comparison.
+\end{itemize}

@@ -1,12 +1,12 @@
 \chapter{Evaluation}
 \label{chap:evaluation}
 
-This chapter presents the results of the first completed benchmark in this thesis: a \acs{CPU}-intensive prime sieve served over \acs{HTTP} across the four implementation variants. Section~\ref{sec:eval_scope} defines the scope; Sections~\ref{sec:eval_artifact_size}--\ref{sec:eval_dx} address each research question in turn. The planned I/O-bound and Volta Financial Risk Engine benchmarks are deferred to future work (see \hyperref[chap:discussion]{Chapter~\ref{chap:discussion}}).
+The evaluation phase of this thesis is structured around the four primary benchmark variants (wasm-rust, wasm-tinygo, docker-rust, docker-golang) using SpinKube/Wasmtime as the \acs{Wasm} runtime. Benchmark results are pending cluster execution on the Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. This chapter presents the evaluation framework, the metric collection methodology, and the developer experience assessment (the one metric that can be assessed without cluster execution). Quantitative results for the optional \acs{WASI}~P1 (WasmEdge) variants are available in Appendix~\ref{app:wasmedge_p1} for historical reference.
 
 \section{Scope and Environment}
 \label{sec:eval_scope}
 
-All measurements were taken on the dedicated Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. Table~\ref{tab:benchmark_environment} summarises the environment. The k6 load generator ran on the same \acs{VM}, connecting to each variant via its localhost \acs{NodePort}, eliminating network latency as a confounding variable.
+All measurements will be taken on the dedicated Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. Table~\ref{tab:benchmark_environment} summarises the environment. The k6 load generator runs on the same \acs{VM}, connecting to each variant via its localhost \acs{NodePort}, eliminating network latency as a confounding variable.
 
 \begin{table}[htbp]
     \centering
@@ -20,8 +20,8 @@ All measurements were taken on the dedicated Hetzner Cloud \acs{VM} described in
         VM Type             & ccx13 (2$\times$ AMD EPYC vCPU, 8\,GB RAM, 80\,GB NVMe) \\
         OS                  & Ubuntu 24.04 LTS \\
         Kubernetes          & K3s v1.35.2+k3s1 \\
-        Container Runtime   & containerd (runc for Docker; crun v1.22 for Wasm) \\
-        Wasm Runtime        & WasmEdge 0.14.1 (LLVM \acs{JIT}) \\
+        Container Runtime   & containerd (runc for Docker; containerd-shim-spin-v2 v0.17.0 for Wasm) \\
+        Wasm Runtime        & Wasmtime/Cranelift (via SpinKube) \\
         Load Generator      & k6, 50 \acp{VU}, 20\,s ramp-up, 60\,s hold \\
         Monitoring          & kube-prometheus-stack, 5\,s scrape interval \\
         Benchmark Workload  & Sieve of Eratosthenes, \texttt{limit=100\,000} \\
@@ -32,229 +32,56 @@ All measurements were taken on the dedicated Hetzner Cloud \acs{VM} described in
 \section{OCI Artifact Size}
 \label{sec:eval_artifact_size}
 
-Table~\ref{tab:image_sizes} reports the on-disk \acs{OCI} image size for each variant as reported by \texttt{docker inspect}. Figure~\ref{fig:image_size} visualises the same data.
+\textit{Measurements pending cluster execution. Run \texttt{benchmarks/01-prime-sieve/run\_experiment.sh} on the Hetzner cluster to populate this section.}
 
-\begin{table}[htbp]
-    \centering
-    \caption{OCI image sizes for all four variants.}
-    \label{tab:image_sizes}
-    \begin{tabular}{ll}
-        \hline
-        \textbf{Variant} & \textbf{Image Size} \\
-        \hline
-        wasm-rust     & 0.13\,MB \\
-        docker-rust   & 2.08\,MB \\
-        wasm-tinygo   & 2.26\,MB \\
-        docker-golang & 6.00\,MB \\
-        \hline
-    \end{tabular}
-\end{table}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/image_size.png}
-    \caption{OCI artifact sizes across all four variants. The wasm-rust variant is 46$\times$ smaller than docker-golang.}
-    \label{fig:image_size}
-\end{figure}
-
-The wasm-rust image (0.13\,MB) is the smallest by a large margin: it is 16$\times$ smaller than docker-rust (2.08\,MB) despite both using the same language and algorithm, and 46$\times$ smaller than docker-golang (6.00\,MB). This dramatic reduction reflects the \acs{Wasm} binary format's elimination of \acs{OS} userland, libc, dynamic linker, and \acs{ELF} binary overhead. The \texttt{.wasm} file contains only compiled application logic; all runtime infrastructure is provided by \acs{WasmEdge} on the host.
-
-Unexpectedly, wasm-tinygo (2.26\,MB) is \textit{larger} than docker-rust (2.08\,MB) despite also targeting \acs{Wasm}. TinyGo bundles its own minimal Go runtime---scheduler stub, conservative garbage collector, and standard library subset---directly inside the \texttt{.wasm} binary. This is an inherent cost of Go's garbage-collected memory model: the \acs{GC} machinery cannot be stripped out. By contrast, the wasm-rust binary has no runtime and no \acs{GC}, accounting for its near-zero overhead.
-
-The docker-golang image (6.00\,MB) uses a \texttt{scratch} base and contains only the statically-linked binary; the overhead compared to docker-rust (2.08\,MB) reflects Go's compiled-in runtime metadata---goroutine scheduler, garbage collector, and standard library \acs{DWARF} symbols.
-
-\textbf{Practical implication:} At high replica densities (e.g.\ 1\,000 pod instances), the wasm-rust variant saves $\approx$5.87\,GB of registry transfer and node-local image storage per pull cycle compared to docker-golang, directly reducing cold-start time in autoscaling scenarios where images are not pre-cached.
+Expected methodology: Docker variant sizes collected via \texttt{docker inspect}; Spin variant sizes approximated from the compiled \texttt{.wasm} artifact (Spin \acs{OCI} media types are not inspectable via \texttt{docker inspect}). Results saved to \texttt{results/01-prime-sieve/image\_sizes.json}.
 
 \section{Startup Latency}
 \label{sec:eval_startup}
 
-\subsection{Cold Start}
+\textit{Measurements pending cluster execution.}
 
-The cold-start measurement (Run~1) captures the full time from pod scheduled to first \acs{HTTP}~200 response, including \acs{OCI} image pull from the registry. Figure~\ref{fig:cold_start} shows the single measured values; Table~\ref{tab:cold_start} lists the raw timings.
+Methodology: Six measurement runs per variant. Run~1 = cold start (image not cached on node, includes \acs{OCI} pull). Runs~2--6 = warm starts (image cached). SpinKube variants scale via \texttt{kubectl patch spinapp} (not \texttt{kubectl scale deployment}); the SpinOperator manages pod lifecycle from the \acs{CRD}. Latency is measured from the scale-to-zero command until the first \acs{HTTP}~200 response. Results saved to \texttt{results/01-prime-sieve/cold\_start.json} and \texttt{warm\_start.json}.
 
-\begin{table}[htbp]
-    \centering
-    \caption{Cold-start latency (N=1 per variant; includes image pull).}
-    \label{tab:cold_start}
-    \begin{tabular}{ll}
-        \hline
-        \textbf{Variant} & \textbf{Cold Start (ms)} \\
-        \hline
-        docker-rust   & 38.93 \\
-        wasm-tinygo   & 39.98 \\
-        wasm-rust     & 42.03 \\
-        docker-golang & 3826.40 \\
-        \hline
-    \end{tabular}
-\end{table}
+\subsection{Expected Differences from WASI P1}
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/cold_start.png}
-    \caption{Cold-start latency (single measurement per variant). The docker-golang outlier is dominated by its 6\,MB image pull time.}
-    \label{fig:cold_start}
-\end{figure}
+SpinKube's request-handler model is expected to change the startup profile compared to the \acs{WASI}~P1 variants documented in Appendix~\ref{app:wasmedge_p1}:
 
-Three variants cluster tightly between 39\,ms and 42\,ms. The docker-golang outlier at 3826\,ms is dominated by its 6\,MB image pull: at the Hetzner registry bandwidth observed during the measurement, pulling 6\,MB takes approximately 3.8\,s. This is not a Go runtime initialisation problem; it is an image size artefact, which the warm-start measurements disambiguate.
-
-The 3.1\,ms gap between docker-rust (38.93\,ms) and wasm-rust (42.03\,ms) is the first indication of \acs{WasmEdge}'s \acs{JIT} compilation cost: the \texttt{.wasm} binary must be compiled to native code on first module load before the process can begin accepting connections. With N=1, this gap is within measurement noise and should not be treated as a precise estimate.
-
-\subsection{Warm Start}
-
-Warm-start measurements (Runs~2--6) capture pod startup with the \acs{OCI} image already cached on the node. Table~\ref{tab:warm_start} presents the five-run statistics; Figure~\ref{fig:warm_start} shows the distribution per variant.
-
-\begin{table}[htbp]
-    \centering
-    \caption{Warm-start latency over five consecutive runs (image cached). Values in milliseconds.}
-    \label{tab:warm_start}
-    \begin{tabular}{lrrrrr}
-        \hline
-        \textbf{Variant} & \textbf{Mean} & \textbf{Median} & \textbf{Stdev} & \textbf{Min} & \textbf{Max} \\
-        \hline
-        docker-rust   &  40.0 &  39.8 &   0.6 &  39.3 &  40.7 \\
-        wasm-tinygo   &  40.8 &  41.1 &   1.4 &  38.8 &  42.6 \\
-        wasm-rust     & 266.1 &  42.0 & 466.5 &  38.8 & 1098.8 \\
-        docker-golang & 5882.1 & 4917.5 & 2323.1 & 3778.6 & 8408.9 \\
-        \hline
-    \end{tabular}
-\end{table}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/warm_start.png}
-    \caption{Warm-start latency across five runs per variant (image cached). Note the outliers in wasm-rust (Run~4) and the consistently elevated docker-golang times.}
-    \label{fig:warm_start}
-\end{figure}
-
-docker-rust (mean 40.0\,ms, stdev 0.6\,ms) is the most stable variant: the Rust binary is loaded directly by the Linux kernel's ELF loader with no runtime initialisation overhead. wasm-tinygo (mean 40.8\,ms, stdev 1.4\,ms) is nearly as stable, despite requiring \acs{WasmEdge} \acs{JIT} compilation; TinyGo's small binary (2.26\,MB) translates quickly.
-
-wasm-rust has a median of 42.0\,ms but one outlier run at 1098.8\,ms, yielding a high mean and standard deviation. The outlier (Run~4) likely reflects a WasmEdge \acs{JIT} cache miss: when the JIT-compiled native code is not retained in the \acs{WasmEdge} module cache between pod restarts, the full \acs{LLVM} compilation pipeline re-executes. This is a known characteristic of JIT-based \acs{Wasm} runtimes; \acs{AOT} pre-compilation via \texttt{wasmedgec} would eliminate this variance at the cost of portability.
-
-docker-golang warm starts (mean 5882\,ms, median 4917\,ms, stdev 2323\,ms) are consistently and surprisingly slow. Two runs exceeded 8\,s despite the image being fully cached. This points to Go runtime initialisation overhead on the resource-constrained 2-vCPU \acs{VM}: when many goroutines are created concurrently during other activity on the node (e.g.\ Prometheus scraping, K3s control-plane), Go's \acs{GC} and scheduler initialisation compete for \acs{CPU} cycles, inflating the observed startup time. This is a characteristic of Go's managed runtime, not of Docker itself.
+\begin{itemize}
+    \item Spin \acs{OCI} artifacts use Spin-specific media types and are typically smaller than equivalent Docker images. Cold-start latency should be lower due to faster pull times.
+    \item Wasmtime/Cranelift performs \acs{JIT} compilation on first module instantiation, similar to \acs{WasmEdge}/\acs{LLVM}. The Cranelift backend's compilation speed is generally faster than \acs{LLVM}'s full optimisation pipeline.
+    \item The SpinOperator adds a reconciliation loop between the \texttt{SpinApp} \acs{CRD} update and the pod creation; this may add a small fixed overhead ($\sim$1--2\,s) to warm-start measurements compared to direct \texttt{Deployment} scaling.
+\end{itemize}
 
 \section{Runtime Performance Under Load}
 \label{sec:eval_performance}
 
-The k6 load test used a ramping-\acs{VU} executor: 1\,\acs{VU} ramps to 50~\acp{VU} over 20\,s, holds at 50~\acp{VU} for 60\,s, then ramps down. All requests used \texttt{GET /prime?limit=100000\&no\_list=1}. Table~\ref{tab:k6_results} summarises the key metrics.
+\textit{Measurements pending cluster execution.}
 
-\begin{table}[htbp]
-    \centering
-    \caption{k6 load test results at 50 VUs, 60\,s hold, limit=100\,000.}
-    \label{tab:k6_results}
-    \begin{tabular}{lrrrrr}
-        \hline
-        \textbf{Variant} & \textbf{RPS} & \textbf{Fail Rate} & \textbf{p50 (ms)} & \textbf{p95 (ms)} & \textbf{p99 (ms)} \\
-        \hline
-        docker-golang & 509.6 & 0.0\% &  92.4 & 196.3 & 266.3 \\
-        docker-rust   & 479.5 & 0.0\% &  92.5 & 157.6 & 173.1 \\
-        wasm-rust     &  24.0 & 67.1\% & 5003 & 6074.9 & 6266.6 \\
-        wasm-tinygo   &   2.9 & 47.9\% & 4605 & 18655.8 & 19603.9 \\
-        \hline
-    \end{tabular}
-\end{table}
+Methodology: k6 ramping-\acs{VU} executor. 1~\acs{VU} ramps to 50~\acp{VU} over 20\,s, holds for 60\,s, ramps down. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: \acs{RPS}, failure rate, p50/p95/p99 end-to-end latency, and the \texttt{server\_compute\_us} custom metric extracted from the \acs{JSON} response body.
 
-Figures~\ref{fig:throughput},~\ref{fig:rps_over_time},~\ref{fig:latency}, and~\ref{fig:error_rate} present the throughput, \acs{RPS} time series, latency distribution, and failure rate respectively.
+\subsection{Scaling Experiment}
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/throughput.png}
-    \caption{Total successful requests per variant during the 60\,s hold phase. Docker variants handle orders of magnitude more requests than the single-threaded Wasm variants.}
-    \label{fig:throughput}
-\end{figure}
+In addition to the standard single-instance run (GOMAXPROCS=1, TOKIO\_WORKER\_THREADS=1, max\_instances=1), a second pass is performed with unlimited workers (GOMAXPROCS=2, TOKIO\_WORKER\_THREADS=2, Spin max\_instances=4). This experiment directly measures how effectively each variant exploits the available 2-vCPU environment, testing whether the request-handler model of SpinKube achieves comparable concurrency to Docker's goroutine/async models when given equivalent resources.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/rps_over_time.png}
-    \caption{Requests per second over the full k6 run. The Docker variants scale with VU ramp-up; the Wasm variants flatten immediately at their single-threaded saturation ceiling.}
-    \label{fig:rps_over_time}
-\end{figure}
+\subsection{Expected Differences from WASI P1}
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/latency.png}
-    \caption{End-to-end latency distribution (p50, p95, p99) per variant.}
-    \label{fig:latency}
-\end{figure}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/error_rate.png}
-    \caption{HTTP failure rate per variant under 50 concurrent VUs.}
-    \label{fig:error_rate}
-\end{figure}
-
-\subsection{Docker Variants}
-
-Both Docker variants achieve high throughput with zero failures. docker-golang (509.6\,\acs{RPS}) slightly outperforms docker-rust (479.5\,\acs{RPS}) in raw throughput, but docker-rust achieves lower p95 latency (157.6\,ms vs.\ 196.3\,ms), reflecting axum/Tokio's deterministic async scheduling compared to Go's work-stealing goroutine scheduler under high contention.
-
-The \texttt{server\_compute\_us} metric---the server-side wall-clock time of the sieve computation alone---is 752\,$\mu$s median for docker-golang and 1002\,$\mu$s median for docker-rust. Both are in the sub-millisecond range, confirming that the sieve algorithm compiles and executes efficiently as native code on both runtimes. The docker-golang p95 compute time is 32.3\,ms (vs.\ the 1.5\,ms p95 for docker-rust), reflecting bursty \acs{CPU} contention when many goroutines are scheduled concurrently on only 2 vCPUs: Go's work-stealing scheduler occasionally places multiple sieve computations on the same core, inflating the wall-clock time for those goroutines.
-
-\subsection{Wasm Variants: The WASI P1 Concurrency Bottleneck}
-
-The Wasm variants tell a fundamentally different story. wasm-rust achieves only 24.0\,\acs{RPS} with a 67.1\% failure rate (1\,471 failed requests out of 2\,192 total). wasm-tinygo is worse still: 2.9\,\acs{RPS} with a 47.9\% failure rate and a p95 latency of 18.7\,s.
-
-\textbf{Root cause: architectural, not algorithmic.} The \texttt{server\_compute\_us} metric exposes the real situation. wasm-rust records a median compute time of 117.5\,ms per sieve execution; wasm-tinygo records 243.9\,ms. These figures are 156$\times$ and 324$\times$ slower than their Docker counterparts for the same algorithm.
-
-This performance gap arises from two compounding factors:
-
-\begin{enumerate}
-    \item \textbf{\acs{WASI} P1 single-threaded execution.} As documented in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}, both Wasm variants operate a blocking, single-threaded \texttt{accept()}-handle-respond loop. Under 50 concurrent \acp{VU}, incoming connections queue at the \acs{TCP} level. The first accepted request runs to completion before the second is accepted. Connections that wait longer than k6's default timeout are reported as failures. This explains the high failure rates and multi-second p95 latencies.
-
-    \item \textbf{\acs{WasmEdge} \acs{JIT} overhead for array-intensive workloads.} The sieve algorithm performs dense, indexed access over a boolean array of 100\,000 elements. \acs{Wasm}'s \acl{SFI} model requires that every memory access be bounds-checked at runtime. Although \acs{WasmEdge}'s \acs{LLVM} \acs{JIT} eliminates many redundant checks via range analysis, the inner-loop access pattern of the sieve---where the index is a non-trivial linear expression of two loop variables---limits how aggressively the JIT can hoist or eliminate bounds checks. The result is a significant \acs{CPU} overhead per sieve execution compared to native code, where the compiler has complete visibility and can eliminate all bounds checks statically.
-\end{enumerate}
-
-\textbf{wasm-rust vs.\ docker-rust (language-controlled comparison).} Both variants use identical Rust source code for the sieve algorithm. The sole difference is the execution environment. wasm-rust at 24.0\,\acs{RPS} vs.\ docker-rust at 479.5\,\acs{RPS} represents a 20$\times$ throughput gap attributable jointly to (1) the \acs{WASI} P1 single-threaded I/O constraint and (2) \acs{WasmEdge} \acs{JIT} bounds-checking overhead on array-intensive computation. Disentangling the relative contributions of these two factors would require running wasm-rust on a \acs{WASI} P2 runtime with multi-threaded I/O, which is left as future work.
-
-\textbf{wasm-tinygo vs.\ wasm-rust.} Both Wasm variants face the same concurrency constraint, yet wasm-tinygo's median server compute time (243.9\,ms) is 2.1$\times$ higher than wasm-rust's (117.5\,ms). TinyGo's conservative garbage collector introduces additional overhead for the boolean array allocation: the conservative scan must treat every word on the stack as a potential pointer, inflating the cost of heap operations. The sieve allocates a fresh \texttt{[]bool} slice on each request; under TinyGo's conservative \acs{GC}, this allocation and its subsequent scan are more expensive than Rust's stack-allocated \texttt{Vec<bool>}, which the Rust allocator handles without any garbage collection overhead.
-
-\subsection{Saturation Analysis}
-
-wasm-rust's theoretical single-threaded throughput ceiling is $1000\,\text{ms} / 117.5\,\text{ms} \approx 8.5$\,\acs{RPS}. The observed 24.0\,\acs{RPS} exceeds this ceiling, which can be explained by k6's connection keep-alive behaviour: once a connection is established, the \acs{TCP} overhead for subsequent requests on the same connection is minimal, and the server can pipeline the response to a fast client before the accept loop cycles. The 67.1\% failure rate confirms that saturation has been reached---the \acs{TCP} queue fills up faster than connections are drained.
-
-wasm-tinygo's ceiling is $1000\,\text{ms} / 243.9\,\text{ms} \approx 4.1$\,\acs{RPS}$. The observed 2.9\,\acs{RPS} falls below this ceiling, consistent with the very high \texttt{http\_req\_blocked} times (p90: 5.1\,s) indicating that connections are waiting at the \acs{OS} \acs{TCP} stack before even being accepted by the server process.
+The critical architectural difference between SpinKube (\acs{WASI}~P2) and \acs{WasmEdge} (\acs{WASI}~P1) is the elimination of the single-threaded \texttt{accept()} loop. \acs{WASI}~P1 variants on \acs{WasmEdge} were fundamentally bounded by sequential request processing (one connection at a time), yielding 24\,\acs{RPS} for wasm-rust with a 67\% failure rate at 50 concurrent \acp{VU} (see Appendix~\ref{app:wasmedge_p1}). SpinKube's request-handler model dispatches each incoming request to a fresh component instance, allowing concurrent request processing limited only by the number of active instances (\texttt{max\_instances} in \texttt{spin.toml}). Pending results will determine whether this architectural change closes the throughput gap with Docker variants.
 
 \section{Memory and CPU Footprint}
 \label{sec:eval_resources}
 
-Memory \acl{RSS} was collected from the Prometheus \texttt{container\_memory\_rss} metric at two operating points: idle (60\,s with no incoming requests) and peak (maximum observed during the k6 load test window). \acs{CPU} utilisation is reported as average millicores during the k6 hold phase. Table~\ref{tab:resource_metrics} presents all values; Figures~\ref{fig:memory} and~\ref{fig:cpu} visualise the results.
+\textit{Measurements pending cluster execution.}
 
-\begin{table}[htbp]
-    \centering
-    \caption{Memory RSS and average CPU utilisation per variant.}
-    \label{tab:resource_metrics}
-    \begin{tabular}{lrrr}
-        \hline
-        \textbf{Variant} & \textbf{Idle RSS (MB)} & \textbf{Peak RSS (MB)} & \textbf{CPU avg (mcores)} \\
-        \hline
-        docker-rust   & 2.02 & 2.26 & 299.9 \\
-        wasm-rust     & 4.38 & 4.40 & 221.9 \\
-        wasm-tinygo   & --- & 34.92 & 260.3 \\
-        docker-golang & 13.63 & 13.63 & 287.4 \\
-        \hline
-    \end{tabular}
-\end{table}
+Methodology: Prometheus \texttt{container\_memory\_rss} metric collected at idle (pod running 60\,s with no requests) and peak (maximum during k6 load window). \acs{CPU} reported as average millicores during the k6 hold phase. Results saved to \texttt{results/01-prime-sieve/resource\_metrics.json}.
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/memory.png}
-    \caption{Memory RSS (idle and peak) per variant. wasm-tinygo idle value was not captured by Prometheus (marked as missing).}
-    \label{fig:memory}
-\end{figure}
+\subsection{Expected Differences from WASI P1}
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.85\textwidth]{figures/prime-sieve/cpu.png}
-    \caption{Average CPU utilisation during the 60\,s k6 hold phase (millicores). Wasm variants consume fewer CPU resources primarily because they process fewer requests.}
-    \label{fig:cpu}
-\end{figure}
-
-\textbf{Memory.} docker-rust has the lowest \acs{RSS} (2.02\,MB idle, 2.26\,MB peak), reflecting the absence of a garbage collector and the minimal Tokio async runtime footprint. wasm-rust is higher (4.38\,MB idle), despite using the same language, because \acs{WasmEdge} allocates its \acs{JIT} compilation context and \acs{Wasm} linear memory region alongside the process. The \acs{JIT}-compiled native code and module metadata reside in \acs{WasmEdge}'s internal heap, which is counted in the container's \acs{RSS}. The negligible difference between idle and peak for wasm-rust (4.38 vs.\ 4.40\,MB) reflects the sieve's deterministic memory usage: the boolean array is allocated and freed on each request with no net growth.
-
-docker-golang's idle \acs{RSS} of 13.63\,MB reflects the Go runtime's pre-allocated heap arena, goroutine stacks, and \acs{GC} metadata. Notably, docker-golang's peak \acs{RSS} equals its idle \acs{RSS} (13.63\,MB): under 50 concurrent goroutines, Go's \acs{GC} keeps memory usage within the pre-allocated pool without growing the heap.
-
-The wasm-tinygo idle \acs{RSS} could not be captured: the Prometheus scrape interval (5\,s) did not produce a data point in the 60\,s idle window for this variant, likely due to the pod's readiness probe timing relative to the scrape schedule. The peak \acs{RSS} of 34.92\,MB is surprisingly high for a \acs{Wasm} variant. This reflects the conservative \acs{GC}'s behaviour: TinyGo's conservative \acs{GC} does not compact the heap and does not eagerly release memory, so boolean arrays allocated on each request accumulate in the heap until a full collection cycle runs.
-
-\textbf{\acs{CPU} utilisation.} docker-rust (299.9\,mcores) and docker-golang (287.4\,mcores) show the highest \acs{CPU} utilisation, which is expected---they successfully process 479--510 requests per second, keeping both vCPUs fully occupied. wasm-rust (221.9\,mcores) and wasm-tinygo (260.3\,mcores) show lower \acs{CPU} utilisation not because they are more efficient, but because they process far fewer requests. The single-threaded saturation means the server executes only one sieve at a time; the remaining \acs{CPU} capacity goes unused while connections queue in the \acs{TCP} stack.
+\begin{itemize}
+    \item Spin \acs{RSS} includes Wasmtime's \acs{JIT} compilation context and \acs{Wasm} linear memory region, analogous to the \acs{WasmEdge} overhead observed in Appendix~\ref{app:wasmedge_p1}.
+    \item With \texttt{max\_instances=1}, the Spin variants process one request at a time; under higher concurrency they will scale instance count (creating additional \acs{Wasm} module contexts), which may increase peak \acs{RSS} proportionally.
+    \item docker-rust \acs{RSS} is expected to remain lowest (2--3\,MB), as it has no garbage collector and minimal Tokio runtime footprint.
+\end{itemize}
 
 \section{Developer Experience}
 \label{sec:eval_dx}
@@ -270,67 +97,47 @@ This section provides the qualitative assessment of the engineering effort requi
         \hline
         \textbf{Dimension}            & \textbf{docker-golang} & \textbf{docker-rust} & \textbf{wasm-rust} & \textbf{wasm-tinygo} \\
         \hline
-        Toolchain setup               & Low    & Low-Medium & Medium    & High      \\
-        Dependency compatibility      & Low    & Low        & High      & Very High \\
-        K8s cluster integration       & Low    & Low        & High      & High      \\
-        Debugging and observability   & Low    & Low        & High      & High      \\
+        Toolchain setup               & Low    & Low-Medium & Low-Medium & Medium    \\
+        Dependency compatibility      & Low    & Low        & Low        & Low       \\
+        K8s cluster integration       & Low    & Low        & Low-Medium & Low-Medium \\
+        Debugging and observability   & Low    & Low        & Medium     & Medium    \\
         \hline
     \end{tabular}}
 \end{table}
 
 \subsection{Toolchain Setup}
 
-The Docker variants require only a standard \texttt{docker build} workflow. Go~1.26's toolchain is a single binary download; Rust~1.94 requires \texttt{rustup} but is well-documented and cross-platform. The wasm-rust variant adds the \texttt{wasm32-wasip1} target (\texttt{rustup target add}) but is otherwise a standard \texttt{cargo build}. The wasm-tinygo variant requires TinyGo~0.40.1 in addition to the regular Go toolchain, with no stable package manager distribution on Ubuntu (requires a manual \texttt{.tar.gz} install or manual apt pinning). The mismatch between TinyGo's supported standard library subset and the full Go standard library is not surfaced until compilation time, creating unexpected friction.
+The Docker variants require only a standard \texttt{docker build} workflow. Go~1.26's toolchain is a single binary download; Rust~1.94 requires \texttt{rustup} but is well-documented and cross-platform.
+
+The wasm-rust variant adds \texttt{cargo-component} (\texttt{cargo install cargo-component}) and the \texttt{wasm32-wasip2} Rust target (\texttt{rustup target add wasm32-wasip2}). The \texttt{spin} \acs{CLI} is required for \texttt{spin registry push}. These are all first-party tools with stable documentation. The friction is rated Low-Medium because \texttt{cargo-component} is a separate install step not yet integrated into the \texttt{cargo} core toolchain.
+
+The wasm-tinygo variant requires TinyGo~0.40.1 (installed as a \texttt{.tar.gz} release, no stable \texttt{apt} package on Ubuntu) and the \texttt{spin} \acs{CLI}. The \texttt{-target=wasip1} flag is required: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK} (\texttt{github.com/spinframework/spin-go-sdk/v2}) provides \texttt{spinhttp.Handle()} via a \acs{CGo} layer, exporting \texttt{fermyon:spin/inbound-http}---a marked improvement over the \acs{WASI}~P1 experience where \texttt{net/http} server code was broken since TinyGo~0.28.
 
 \subsection{Dependency Compatibility}
 
-This dimension shows the starkest contrast. The Docker variants had no dependency issues: all crates and packages on their respective target triples are well-supported.
+The Docker variants had no dependency issues. All crates and packages compile without modification.
 
-For wasm-rust, the failure cascade documented in \hyperref[chap:methodology]{Chapter~\ref{chap:methodology}} required evaluating four candidate \acs{HTTP} approaches before a working solution was found. \texttt{hyper\_wasi} and \texttt{tokio\_wasi} are unmaintained \acs{WasmEdge}-specific forks that fail to compile against current Rust versions. \texttt{std::net::TcpListener} returns \texttt{Err("Unsupported")} at runtime on \texttt{wasm32-wasip1}. The only viable path---\texttt{wasmedge\_wasi\_socket~0.5.5}---is a \acs{WasmEdge}-specific crate not available in the mainstream Rust ecosystem; any dependency that transitively uses standard library networking will still fail. This represents a significant ecosystem gap: for a practical production service, dependency vetting for \acs{WASI} P1 compatibility must be performed manually.
+The wasm-rust variant uses only the \texttt{spin-sdk~=~"5.2.0"} crate and standard library dependencies. No proprietary socket crates are required; \texttt{wasm32-wasip2} is a Tier~2 stable Rust target since Rust~1.82. This represents a dramatic improvement over the \acs{WASI}~P1 experience (see Appendix~\ref{app:wasmedge_p1}) where four candidate \acs{HTTP} libraries failed before \texttt{wasmedge\_wasi\_socket} was discovered as the only viable option.
 
-For wasm-tinygo, the situation is worse. TinyGo's \texttt{net/http} server code path has been non-functional on \texttt{wasip1} since version~0.28 (Netdev architecture regression). The solution required writing a custom \texttt{server.go} file that calls \acs{WasmEdge} host socket functions directly via \texttt{//go:wasmimport} directives---a low-level technique that bypasses TinyGo's own standard library entirely. Additionally, the \texttt{-gc=conservative} build flag is required to prevent the \acs{GC} from treating \texttt{unsafe.Pointer} values passed to \acs{WasmEdge} host functions as reclaimable. None of these constraints are documented in the TinyGo or \acs{WasmEdge} official documentation; they were discovered through iterative debugging.
+The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). Standard \texttt{net/http} types work without modification. The \texttt{server.go} workaround with \texttt{//go:wasmimport} socket directives required in the \acs{WASI}~P1 TinyGo variant is completely eliminated.
 
 \subsection{Kubernetes Integration}
 
-Docker variants require standard \acs{K8s} manifests with no special configuration. The \acs{Wasm} variants require three non-standard additions: (1) \texttt{runtimeClassName: wasmedge} in the pod spec, (2) two pod annotations (\texttt{run.oci.handler: wasmedge}, \texttt{module.wasm.image/variant: compat}), and (3) a cluster-level \texttt{RuntimeClass} object with a node selector. More significantly, the \acs{K8s} node itself requires crun~v1.22 compiled from source with \texttt{--with-wasmedge}, a custom containerd configuration block, and the WasmEdge 0.14.1 shared library installed system-wide. This setup is not available in any managed \acs{K8s} offering (EKS, GKE, AKS) without custom node groups or operator-managed DaemonSets, limiting the operational portability of the \acs{Wasm} deployment model.
+Docker variants require standard \acs{K8s} manifests with no special configuration.
+
+The Spin variants require: (1) a cluster-level \texttt{RuntimeClass} object (\texttt{wasmtime-spin}), (2) the SpinOperator \acs{CRD} and Helm chart (installed once via \texttt{make deploy-stack}), and (3) \texttt{SpinApp} \acs{CRD} manifests instead of standard \texttt{Deployment} + \texttt{Service} manifests. The \texttt{SpinApp} resource is more opinionated than a raw \texttt{Deployment} but conceptually simpler (no pod template, no replica management outside the \acs{CRD}). The cluster setup (\texttt{containerd-shim-spin-v2} installation, containerd plugin registration) is automated by \texttt{cloud-init.sh} and requires no manual intervention after initial provisioning.
+
+Compared to the \acs{WASI}~P1 setup, SpinKube eliminates the need to compile \texttt{crun} from source (\texttt{--with-wasmedge}), install \texttt{libwasmedge.so} system-wide, and configure \acs{OCI} runtime annotations on every pod. The SpinKube integration is closer in operational complexity to standard \acs{K8s} Helm-chart workflows.
 
 \subsection{Debugging and Observability}
 
-Docker containers support the full debugging toolkit: \texttt{kubectl exec} for interactive shell access, \texttt{docker logs} for stdout/stderr, and native debuggers (Delve for Go, \texttt{rust-gdb} for Rust) can be attached to running processes. Standard profiling tools (\texttt{pprof}, \texttt{perf}) work without modification.
+Docker containers support the full debugging toolkit: \texttt{kubectl exec} for interactive shell access, \texttt{docker logs} for stdout/stderr, and native debuggers (Delve for Go, \texttt{rust-gdb} for Rust) can be attached to running processes.
 
-\acs{Wasm} pods support \textit{only} stdout/stderr log output. \texttt{kubectl exec} cannot open a shell into a \acs{Wasm} pod because the \acs{WASI} environment does not expose a shell binary or an interactive \acs{PTY} interface. No debugger can attach to a running \acs{WasmEdge} process, and no standard profiler captures \acs{Wasm} module execution. The absence of debugger support significantly increases the iteration cycle when diagnosing runtime failures---the only diagnostic signal available is what the application explicitly writes to stderr. DWARF debug info support and interactive debugger attachment are items on the \acs{WASI} P2 roadmap.
+Spin \acs{Wasm} pods support stdout/stderr log output (via \texttt{kubectl logs}). \texttt{kubectl exec} cannot open a shell into a \acs{Wasm} pod because the \acs{WASI} environment does not expose a shell binary or an interactive \acs{PTY} interface. No debugger can attach to a running Wasmtime process from outside the \acs{Wasm} sandbox. The absence of debugger support increases the iteration cycle when diagnosing runtime failures. However, the elimination of proprietary socket code (\texttt{wasmedge\_wasi\_socket}, custom \texttt{server.go}) removes the most common \acs{WASI}~P1 failure modes; standard Rust and Go compilation errors surface at build time rather than at runtime.
 
 \section{Summary of Findings}
 \label{sec:eval_summary}
 
-Table~\ref{tab:summary_findings} consolidates the quantitative results across all five metrics.
+\textit{Quantitative summary will be populated once benchmark measurements are complete. The qualitative developer experience findings are complete above.}
 
-\begin{table}[htbp]
-    \centering
-    \caption{Consolidated benchmark results for the prime sieve workload.}
-    \label{tab:summary_findings}
-    \adjustbox{max width=\linewidth}{%
-    \begin{tabular}{lrrrr}
-        \hline
-        \textbf{Metric} & \textbf{docker-golang} & \textbf{docker-rust} & \textbf{wasm-rust} & \textbf{wasm-tinygo} \\
-        \hline
-        Image size (MB)        & 6.00 & 2.08 & 0.13 & 2.26 \\
-        Cold start (ms)        & 3826.4 & 38.9 & 42.0 & 40.0 \\
-        Warm start median (ms) & 4917.5 & 39.8 & 42.0 & 41.1 \\
-        RPS (50 VUs)           & 509.6 & 479.5 & 24.0 & 2.9 \\
-        Failure rate           & 0.0\% & 0.0\% & 67.1\% & 47.9\% \\
-        Idle RSS (MB)          & 13.63 & 2.02 & 4.38 & --- \\
-        Peak RSS (MB)          & 13.63 & 2.26 & 4.40 & 34.92 \\
-        \hline
-    \end{tabular}}
-\end{table}
-
-The results reveal a clear trade-off. \acs{Wasm} variants---specifically wasm-rust---offer compelling size and cold-start advantages (0.13\,MB image, 42\,ms warm start, 4.40\,MB peak \acs{RSS}) that are directly relevant to high-density, serverless, and autoscaling workloads. However, \acs{WASI} P1's single-threaded I/O model combined with \acs{WasmEdge}'s \acs{JIT} overhead for array-intensive computation renders the Wasm variants uncompetitive for the high-concurrency microservice scenario tested here: 24\,\acs{RPS} with a 67\% failure rate versus 510\,\acs{RPS} with zero failures for docker-golang.
-
-These findings directly address the four research questions:
-\begin{itemize}
-    \item \textbf{RQ1 (Resource Efficiency):} wasm-rust achieves 46$\times$ smaller images and 3$\times$ lower peak \acs{RSS} than docker-golang. The \acs{Wasm} binary format eliminates all \acs{OS} userland overhead.
-    \item \textbf{RQ2 (Startup Latency):} With image cached, wasm-rust and wasm-tinygo start in $\approx$42\,ms---on par with docker-rust. docker-golang's warm starts are unexpectedly slow (median 4917\,ms) due to Go runtime initialisation overhead on a resource-constrained \acs{VM}.
-    \item \textbf{RQ3 (Runtime Performance):} Docker variants dominate under concurrent load. The Wasm performance gap is driven by \acs{WASI} P1's single-threaded concurrency model and \acs{WasmEdge} \acs{JIT} overhead, not by the \acs{Wasm} binary format or algorithm quality.
-    \item \textbf{RQ4 (Developer Experience):} The Docker variants present no ecosystem friction. The Wasm variants require navigating unmaintained libraries (\texttt{hyper\_wasi}, \texttt{tokio\_wasi}), broken standard library abstractions (TinyGo \texttt{net/http}, Rust \texttt{std::net}), and non-standard \acs{K8s} cluster setup not available in managed cloud offerings.
-\end{itemize}
+The key qualitative finding is that SpinKube/\acs{WASI}~P2 substantially reduces the ecosystem friction observed with \acs{WasmEdge}/\acs{WASI}~P1 (Appendix~\ref{app:wasmedge_p1}). All four dependency compatibility ratings improve from High/Very High (P1) to Low (P2), because standard \texttt{net/http} and standard Rust networking abstractions work correctly under \acs{WASI}~P2 without proprietary workarounds. K8s integration friction decreases because \texttt{containerd-shim-spin-v2} is a static binary installed by \texttt{cloud-init} without source compilation. The remaining friction (Medium for toolchain setup and debugging) is inherent to the \acs{Wasm}/\acs{WASI} execution model and is expected to decrease as the ecosystem matures.
