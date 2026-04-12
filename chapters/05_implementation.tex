@@ -10,7 +10,7 @@ The primary goal of the experimental infrastructure is measurement \textit{isola
 
 \begin{itemize}
     \item \textbf{Local Minikube:} Runs a \acs{K8s} cluster inside a \acs{VM} on the developer's laptop. Background processes (browser, IDE, system updates) compete for \acs{CPU} and memory, making benchmark results unreproducible across sessions. Additionally, consumer laptop \acs{CPU} governors apply dynamic frequency scaling under load, introducing measurement variance.
-    \item \textbf{k3d (K3s in Docker):} Runs a K3s cluster inside Docker containers on the local machine. This introduces multiple hypervisor/container nesting layers---host \acs{OS} $\to$ Docker $\to$ K3s $\to$ containerd $\to$ \acs{Wasm} runtime---that obscure the runtime overhead being measured and prevent the \acs{WasmEdge} containerd shim from registering correctly.
+    \item \textbf{k3d (K3s in Docker):} Runs a K3s cluster inside Docker containers on the local machine. This introduces multiple hypervisor/container nesting layers---host \acs{OS} $\to$ Docker $\to$ K3s $\to$ containerd $\to$ \acs{Wasm} runtime---that obscure the runtime overhead being measured and complicate the registration of the SpinKube containerd shim.
     \item \textbf{Managed Cloud \acs{K8s} (EKS, GKE, AKS):} Managed \acs{K8s} offerings do not support custom \acs{OCI} runtimes or \texttt{RuntimeClass} with non-standard shims out of the box. Adding SpinKube (\texttt{containerd-shim-spin-v2}) support requires custom node groups or operator-managed DaemonSets, adding abstraction layers that complicate fair comparison.
 \end{itemize}
 
@@ -39,10 +39,8 @@ The key components in this chain are:
     \item \textbf{containerd-shim-spin-v2~v0.17.0:} A containerd shim that implements the containerd shim v2 protocol and embeds Fermyon Spin (which embeds Wasmtime/Cranelift) internally. It does \textit{not} use crun or runc; the shim is the direct process host for the \acs{Wasm} component. Installed from the SpinKube GitHub release as a static binary at \texttt{/usr/local/bin/containerd-shim-spin-v2}.
     \item \textbf{containerd plugin entry:} The containerd configuration registers a \texttt{spin} runtime plugin with \texttt{runtime\_type = 'io.containerd.spin.v2'}. This is always active; no pod annotations are required.
     \item \textbf{SpinOperator (v0.4.0):} A Kubernetes operator (CNCF Sandbox) that watches \texttt{SpinApp} \acs{CRD} resources and creates managed \texttt{Deployments} with \texttt{runtimeClassName: wasmtime-spin}. cert-manager~v1.16.3 is a prerequisite for the operator's admission webhook.
-    \item \textbf{Wasmtime/Cranelift:} The \acs{JIT} engine embedded inside Spin. All \acs{WASI}~P2 component execution uses Wasmtime~(\acs{LLVM}~$\to$~Cranelift \acs{JIT}), distinct from the optional \acs{WasmEdge}/\acs{LLVM} path documented in Appendix~\ref{app:wasmedge_p1}.
+    \item \textbf{Wasmtime/Cranelift:} The \acs{JIT} engine embedded inside Spin. All \acs{WASI}~P2 component execution uses Wasmtime with the Cranelift \acs{JIT} backend.
 \end{itemize}
-
-The optional \acs{WasmEdge} runtime chain (\texttt{crun --with-wasmedge}) is available when \texttt{ENABLE\_WASMEDGE=true} is set during \texttt{cloud-init.sh} execution; see Appendix~\ref{app:wasmedge_p1}.
 
 \subsection{Observability Stack}
 
@@ -56,7 +54,7 @@ The entire environment is described declaratively:
 
 \begin{itemize}
     \item \textbf{Terraform} provisions the Hetzner Cloud firewall (restricting \acs{SSH} and \acs{K8s} \acs{API} access to the operator's \acs{IP}) and the ccx13 \acs{VM}.
-    \item \textbf{cloud-init} installs K3s, installs \texttt{containerd-shim-spin-v2}, and configures containerd on first boot. The complete environment, from bare cloud \acs{VM} to a functioning SpinKube-enabled \acs{K8s} cluster with observability, is bootstrapped with \texttt{make up \&\& make configure \&\& make deploy-stack}. The optional \acs{WasmEdge} steps are guarded by \texttt{ENABLE\_WASMEDGE=true} (see Appendix~\ref{app:wasmedge_p1}).
+    \item \textbf{cloud-init} installs K3s, installs \texttt{containerd-shim-spin-v2}, and configures containerd on first boot. The complete environment, from bare cloud \acs{VM} to a functioning SpinKube-enabled \acs{K8s} cluster with observability, is bootstrapped with \texttt{make up \&\& make configure \&\& make deploy}.
 \end{itemize}
 
 \section{Reference Workload: Sieve of Eratosthenes}
@@ -107,7 +105,7 @@ fn handle(req: IncomingRequest) -> Response {
 }
 \end{verbatim}
 
-There is no \acs{TCP} socket management, no accept loop, and no custom \acs{HTTP} parsing. Spin's Wasmtime/Cranelift host handles all of that; the component receives a parsed \texttt{IncomingRequest} and returns a \texttt{Response}. This eliminates every \acs{WASI}~P1 workaround: no \texttt{wasmedge\_wasi\_socket} crate, no \texttt{wasi\_snapshot\_preview1} imports, no synchronous blocking loop.
+There is no \acs{TCP} socket management, no accept loop, and no custom \acs{HTTP} parsing. Spin's Wasmtime/Cranelift host handles all of that; the component receives a parsed \texttt{IncomingRequest} and returns a \texttt{Response}.
 
 \subsection{Build and Packaging}
 
@@ -136,7 +134,7 @@ func init() {
 func main() {}
 \end{verbatim}
 
-\textbf{No custom socket code is required.} Unlike the \acs{WASI}~P1 TinyGo implementation (Appendix~\ref{app:wasmedge_p1}), no \texttt{//go:wasmimport} socket directives or custom \texttt{server.go} are needed. Note that \texttt{-target=wasip1} is used rather than \texttt{wasip2}: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}; the Spin Go \acs{SDK}'s \acs{CGo} layer provides the correct HTTP export instead. The handler logic is identical to the docker-golang handler, providing the closest possible Go-to-Go comparison.
+\textbf{No custom socket code is required.} No \texttt{//go:wasmimport} socket directives or custom \texttt{server.go} are needed. Note that \texttt{-target=wasip1} is used rather than \texttt{wasip2}: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}; the Spin Go \acs{SDK}'s \acs{CGo} layer provides the correct HTTP export instead. The handler logic is identical to the docker-golang handler, providing the closest possible Go-to-Go comparison.
 
 \subsection{Build and Packaging}
 
@@ -161,7 +159,7 @@ All four primary variants are deployed into the \texttt{prime-sieve} namespace. 
 
 Liveness and readiness probes execute \texttt{GET /health}. Docker variants use a 5-second initial delay; Spin variants rely on the SpinOperator's rollout health management via the \texttt{SpinApp} ready condition.
 
-Table~\ref{tab:nodePorts} shows the NodePort assignments used for direct benchmark access from the k6 load generator. An optional \texttt{wasmedge} \texttt{RuntimeClass} and WasmEdge manifests (NodePorts 30085--30086) are available in \texttt{k8s/01-prime-sieve/optional/}; see Appendix~\ref{app:wasmedge_p1}.
+Table~\ref{tab:nodePorts} shows the NodePort assignments used for direct benchmark access from the k6 load generator.
 
 \begin{table}[htbp]
     \centering
@@ -179,6 +177,6 @@ Table~\ref{tab:nodePorts} shows the NodePort assignments used for direct benchma
     \end{tabular}
 \end{table}
 
-Note that the Spin variants listen on port~80 (Spin's default) rather than 8080. The \texttt{RuntimeClass} object \texttt{wasmtime-spin} (handler \texttt{spin}, node selector \texttt{runtime.spin.sh/runtime=spin}) is applied during \texttt{make deploy-stack} and \texttt{make label-node}.
+Note that the Spin variants listen on port~80 (Spin's default) rather than 8080. The \texttt{RuntimeClass} object \texttt{wasmtime-spin} (handler \texttt{spin}, node selector \texttt{runtime.spin.sh/runtime=spin}) is applied during \texttt{make deploy} and \texttt{make label}.
 
 Prometheus scrapes all four services via pod-level annotations, and the resulting time-series data is used for the memory and \acs{CPU} metrics presented in \hyperref[chap:evaluation]{Chapter~\ref{chap:evaluation}}.

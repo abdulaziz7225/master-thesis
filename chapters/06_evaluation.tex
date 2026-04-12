@@ -1,7 +1,7 @@
 \chapter{Evaluation}
 \label{chap:evaluation}
 
-The evaluation phase of this thesis is structured around the four primary benchmark variants (wasm-rust, wasm-tinygo, docker-rust, docker-golang) using SpinKube/Wasmtime as the \acs{Wasm} runtime. Benchmark results are pending cluster execution on the Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. This chapter presents the evaluation framework, the metric collection methodology, and the developer experience assessment (the one metric that can be assessed without cluster execution). Quantitative results for the optional \acs{WASI}~P1 (WasmEdge) variants are available in Appendix~\ref{app:wasmedge_p1} for historical reference.
+The evaluation phase of this thesis is structured around the four primary benchmark variants (wasm-rust, wasm-tinygo, docker-rust, docker-golang) using SpinKube/Wasmtime as the \acs{Wasm} runtime. Benchmark results are pending cluster execution on the Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. This chapter presents the evaluation framework, the metric collection methodology, and the developer experience assessment (the one metric that can be assessed without cluster execution).
 
 \section{Scope and Environment}
 \label{sec:eval_scope}
@@ -43,13 +43,11 @@ Expected methodology: Docker variant sizes collected via \texttt{docker inspect}
 
 Methodology: Six measurement runs per variant. Run~1 = cold start (image not cached on node, includes \acs{OCI} pull). Runs~2--6 = warm starts (image cached). SpinKube variants scale via \texttt{kubectl patch spinapp} (not \texttt{kubectl scale deployment}); the SpinOperator manages pod lifecycle from the \acs{CRD}. Latency is measured from the scale-to-zero command until the first \acs{HTTP}~200 response. Results saved to \texttt{results/01-prime-sieve/cold\_start.json} and \texttt{warm\_start.json}.
 
-\subsection{Expected Differences from WASI P1}
-
-SpinKube's request-handler model is expected to change the startup profile compared to the \acs{WASI}~P1 variants documented in Appendix~\ref{app:wasmedge_p1}:
+\subsection{Expected Startup Profile}
 
 \begin{itemize}
     \item Spin \acs{OCI} artifacts use Spin-specific media types and are typically smaller than equivalent Docker images. Cold-start latency should be lower due to faster pull times.
-    \item Wasmtime/Cranelift performs \acs{JIT} compilation on first module instantiation, similar to \acs{WasmEdge}/\acs{LLVM}. The Cranelift backend's compilation speed is generally faster than \acs{LLVM}'s full optimisation pipeline.
+    \item Wasmtime/Cranelift performs \acs{JIT} compilation on first module instantiation; Cranelift is designed for fast compile times rather than maximum runtime optimisation.
     \item The SpinOperator adds a reconciliation loop between the \texttt{SpinApp} \acs{CRD} update and the pod creation; this may add a small fixed overhead ($\sim$1--2\,s) to warm-start measurements compared to direct \texttt{Deployment} scaling.
 \end{itemize}
 
@@ -64,9 +62,9 @@ Methodology: k6 ramping-\acs{VU} executor. 1~\acs{VU} ramps to 50~\acp{VU} over 
 
 In addition to the standard single-instance run (GOMAXPROCS=1, TOKIO\_WORKER\_THREADS=1, max\_instances=1), a second pass is performed with unlimited workers (GOMAXPROCS=2, TOKIO\_WORKER\_THREADS=2, Spin max\_instances=4). This experiment directly measures how effectively each variant exploits the available 2-vCPU environment, testing whether the request-handler model of SpinKube achieves comparable concurrency to Docker's goroutine/async models when given equivalent resources.
 
-\subsection{Expected Differences from WASI P1}
+\subsection{Expected Throughput Profile}
 
-The critical architectural difference between SpinKube (\acs{WASI}~P2) and \acs{WasmEdge} (\acs{WASI}~P1) is the elimination of the single-threaded \texttt{accept()} loop. \acs{WASI}~P1 variants on \acs{WasmEdge} were fundamentally bounded by sequential request processing (one connection at a time), yielding 24\,\acs{RPS} for wasm-rust with a 67\% failure rate at 50 concurrent \acp{VU} (see Appendix~\ref{app:wasmedge_p1}). SpinKube's request-handler model dispatches each incoming request to a fresh component instance, allowing concurrent request processing limited only by the number of active instances (\texttt{max\_instances} in \texttt{spin.toml}). Pending results will determine whether this architectural change closes the throughput gap with Docker variants.
+SpinKube's request-handler model dispatches each incoming request to a Wasm instance from a pool sized by \texttt{max\_instances} in \texttt{spin.toml}. With \texttt{max\_instances=1} (the limited mode used for the primary fairness comparison), Spin processes one request at a time; with \texttt{max\_instances=4} (the unlimited mode used in the scaling experiment), Spin dispatches concurrently across instances. Pending results will determine how the Wasm throughput compares to Docker's goroutine/async concurrency models under equivalent resource budgets.
 
 \section{Memory and CPU Footprint}
 \label{sec:eval_resources}
@@ -75,10 +73,10 @@ The critical architectural difference between SpinKube (\acs{WASI}~P2) and \acs{
 
 Methodology: Prometheus \texttt{container\_memory\_rss} metric collected at idle (pod running 60\,s with no requests) and peak (maximum during k6 load window). \acs{CPU} reported as average millicores during the k6 hold phase. Results saved to \texttt{results/01-prime-sieve/resource\_metrics.json}.
 
-\subsection{Expected Differences from WASI P1}
+\subsection{Expected Memory Profile}
 
 \begin{itemize}
-    \item Spin \acs{RSS} includes Wasmtime's \acs{JIT} compilation context and \acs{Wasm} linear memory region, analogous to the \acs{WasmEdge} overhead observed in Appendix~\ref{app:wasmedge_p1}.
+    \item Spin \acs{RSS} includes Wasmtime's \acs{JIT} compilation context and \acs{Wasm} linear memory region.
     \item With \texttt{max\_instances=1}, the Spin variants process one request at a time; under higher concurrency they will scale instance count (creating additional \acs{Wasm} module contexts), which may increase peak \acs{RSS} proportionally.
     \item docker-rust \acs{RSS} is expected to remain lowest (2--3\,MB), as it has no garbage collector and minimal Tokio runtime footprint.
 \end{itemize}
@@ -111,33 +109,33 @@ The Docker variants require only a standard \texttt{docker build} workflow. Go~1
 
 The wasm-rust variant adds \texttt{cargo-component} (\texttt{cargo install cargo-component}) and the \texttt{wasm32-wasip2} Rust target (\texttt{rustup target add wasm32-wasip2}). The \texttt{spin} \acs{CLI} is required for \texttt{spin registry push}. These are all first-party tools with stable documentation. The friction is rated Low-Medium because \texttt{cargo-component} is a separate install step not yet integrated into the \texttt{cargo} core toolchain.
 
-The wasm-tinygo variant requires TinyGo~0.40.1 (installed as a \texttt{.tar.gz} release, no stable \texttt{apt} package on Ubuntu) and the \texttt{spin} \acs{CLI}. The \texttt{-target=wasip1} flag is required: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK} (\texttt{github.com/spinframework/spin-go-sdk/v2}) provides \texttt{spinhttp.Handle()} via a \acs{CGo} layer, exporting \texttt{fermyon:spin/inbound-http}---a marked improvement over the \acs{WASI}~P1 experience where \texttt{net/http} server code was broken since TinyGo~0.28.
+The wasm-tinygo variant requires TinyGo~0.40.1 (installed as a \texttt{.tar.gz} release, no stable \texttt{apt} package on Ubuntu) and the \texttt{spin} \acs{CLI}. The \texttt{-target=wasip1} flag is required: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK} (\texttt{github.com/spinframework/spin-go-sdk/v2}) provides \texttt{spinhttp.Handle()} via a \acs{CGo} layer, exporting \texttt{fermyon:spin/inbound-http}, allowing the TinyGo handler to use standard \texttt{net/http} types.
 
 \subsection{Dependency Compatibility}
 
 The Docker variants had no dependency issues. All crates and packages compile without modification.
 
-The wasm-rust variant uses only the \texttt{spin-sdk~=~"5.2.0"} crate and standard library dependencies. No proprietary socket crates are required; \texttt{wasm32-wasip2} is a Tier~2 stable Rust target since Rust~1.82. This represents a dramatic improvement over the \acs{WASI}~P1 experience (see Appendix~\ref{app:wasmedge_p1}) where four candidate \acs{HTTP} libraries failed before \texttt{wasmedge\_wasi\_socket} was discovered as the only viable option.
+The wasm-rust variant uses only the \texttt{spin-sdk~=~"5.2.0"} crate and standard library dependencies. No proprietary socket crates are required; \texttt{wasm32-wasip2} is a Tier~2 stable Rust target since Rust~1.82.
 
-The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). Standard \texttt{net/http} types work without modification. The \texttt{server.go} workaround with \texttt{//go:wasmimport} socket directives required in the \acs{WASI}~P1 TinyGo variant is completely eliminated.
+The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). Standard \texttt{net/http} types work without modification; no \texttt{//go:wasmimport} socket directives or custom \texttt{server.go} are required.
 
 \subsection{Kubernetes Integration}
 
 Docker variants require standard \acs{K8s} manifests with no special configuration.
 
-The Spin variants require: (1) a cluster-level \texttt{RuntimeClass} object (\texttt{wasmtime-spin}), (2) the SpinOperator \acs{CRD} and Helm chart (installed once via \texttt{make deploy-stack}), and (3) \texttt{SpinApp} \acs{CRD} manifests instead of standard \texttt{Deployment} + \texttt{Service} manifests. The \texttt{SpinApp} resource is more opinionated than a raw \texttt{Deployment} but conceptually simpler (no pod template, no replica management outside the \acs{CRD}). The cluster setup (\texttt{containerd-shim-spin-v2} installation, containerd plugin registration) is automated by \texttt{cloud-init.sh} and requires no manual intervention after initial provisioning.
+The Spin variants require: (1) a cluster-level \texttt{RuntimeClass} object (\texttt{wasmtime-spin}), (2) the SpinOperator \acs{CRD} and Helm chart (installed once via \texttt{make deploy}), and (3) \texttt{SpinApp} \acs{CRD} manifests instead of standard \texttt{Deployment} + \texttt{Service} manifests. The \texttt{SpinApp} resource is more opinionated than a raw \texttt{Deployment} but conceptually simpler (no pod template, no replica management outside the \acs{CRD}). The cluster setup (\texttt{containerd-shim-spin-v2} installation, containerd plugin registration) is automated by \texttt{cloud-init.sh} and requires no manual intervention after initial provisioning.
 
-Compared to the \acs{WASI}~P1 setup, SpinKube eliminates the need to compile \texttt{crun} from source (\texttt{--with-wasmedge}), install \texttt{libwasmedge.so} system-wide, and configure \acs{OCI} runtime annotations on every pod. The SpinKube integration is closer in operational complexity to standard \acs{K8s} Helm-chart workflows.
+The SpinKube integration is comparable in operational complexity to standard \acs{K8s} Helm-chart workflows: \texttt{containerd-shim-spin-v2} is a static binary installed by \texttt{cloud-init}, and the SpinOperator is delivered as a Helm chart with a single \texttt{kubectl apply} for the supporting \texttt{RuntimeClass} and \acs{CRD}s.
 
 \subsection{Debugging and Observability}
 
 Docker containers support the full debugging toolkit: \texttt{kubectl exec} for interactive shell access, \texttt{docker logs} for stdout/stderr, and native debuggers (Delve for Go, \texttt{rust-gdb} for Rust) can be attached to running processes.
 
-Spin \acs{Wasm} pods support stdout/stderr log output (via \texttt{kubectl logs}). \texttt{kubectl exec} cannot open a shell into a \acs{Wasm} pod because the \acs{WASI} environment does not expose a shell binary or an interactive \acs{PTY} interface. No debugger can attach to a running Wasmtime process from outside the \acs{Wasm} sandbox. The absence of debugger support increases the iteration cycle when diagnosing runtime failures. However, the elimination of proprietary socket code (\texttt{wasmedge\_wasi\_socket}, custom \texttt{server.go}) removes the most common \acs{WASI}~P1 failure modes; standard Rust and Go compilation errors surface at build time rather than at runtime.
+Spin \acs{Wasm} pods support stdout/stderr log output (via \texttt{kubectl logs}). \texttt{kubectl exec} cannot open a shell into a \acs{Wasm} pod because the \acs{WASI} environment does not expose a shell binary or an interactive \acs{PTY} interface. No debugger can attach to a running Wasmtime process from outside the \acs{Wasm} sandbox. The absence of debugger support increases the iteration cycle when diagnosing runtime failures; in practice most issues surface at build time as standard Rust or Go compilation errors rather than at runtime.
 
 \section{Summary of Findings}
 \label{sec:eval_summary}
 
 \textit{Quantitative summary will be populated once benchmark measurements are complete. The qualitative developer experience findings are complete above.}
 
-The key qualitative finding is that SpinKube/\acs{WASI}~P2 substantially reduces the ecosystem friction observed with \acs{WasmEdge}/\acs{WASI}~P1 (Appendix~\ref{app:wasmedge_p1}). All four dependency compatibility ratings improve from High/Very High (P1) to Low (P2), because standard \texttt{net/http} and standard Rust networking abstractions work correctly under \acs{WASI}~P2 without proprietary workarounds. K8s integration friction decreases because \texttt{containerd-shim-spin-v2} is a static binary installed by \texttt{cloud-init} without source compilation. The remaining friction (Medium for toolchain setup and debugging) is inherent to the \acs{Wasm}/\acs{WASI} execution model and is expected to decrease as the ecosystem matures.
+The key qualitative finding is that SpinKube/\acs{WASI}~P2 provides a low-friction Wasm development experience. All four dependency compatibility ratings sit at Low because standard \texttt{net/http} and standard Rust networking abstractions work correctly without proprietary workarounds. K8s integration friction is low because \texttt{containerd-shim-spin-v2} is a static binary installed by \texttt{cloud-init} without source compilation. The remaining friction (Medium for toolchain setup and debugging) is inherent to the \acs{Wasm}/\acs{WASI} execution model and is expected to decrease as the ecosystem matures.

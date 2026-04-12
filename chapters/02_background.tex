@@ -185,12 +185,12 @@ Table~\ref{tab:wasi_p1_vs_p2} summarises the key differences between the two ver
         Concurrency        & Single-threaded I/O & Event-driven async I/O \\
         Cross-language     & Brittle shared-memory ABI & WIT composability, type-safe \\
         Multi-module composition & Network calls or raw memory & In-process WIT function calls \\
-        Production readiness & Widely deployed (see Appendix~\ref{app:wasmedge_p1}) & Ratified Feb 2024; used in this thesis (SpinKube) \\
+        Production readiness & Widely deployed for early server-side \acs{Wasm} & Ratified Feb 2024; used in this thesis (SpinKube) \\
         \hline
     \end{tabular}}
 \end{table}
 
-The primary benchmark variants use \acs{WASI}~P2 via SpinKube/Wasmtime (Cranelift \acs{JIT}). The \acs{WASI}~P2 Component Model's \texttt{wasi:http/incoming-handler} interface eliminates the proprietary socket workarounds required by \acs{WASI}~P1 (see Appendix~\ref{app:wasmedge_p1} for the \acs{WASI}~P1 ecosystem constraints and historical benchmark results). An acknowledged confounding variable remains: switching from \acs{WASI}~P1 (WasmEdge/\acs{LLVM}) to \acs{WASI}~P2 (SpinKube/Wasmtime/Cranelift) changes both the \acs{WASI} version \emph{and} the \acs{JIT} backend simultaneously, as there is no mature \acs{WASI}~P2 \acs{HTTP} framework for \acs{WasmEdge}. The full 4-variant primary matrix is described in \hyperref[chap:methodology]{Chapter~\ref{chap:methodology}} and the runtime selection rationale is detailed in \S\ref{sec:runtime_landscape}.
+The primary benchmark variants use \acs{WASI}~P2 via SpinKube/Wasmtime (Cranelift \acs{JIT}). The \acs{WASI}~P2 Component Model's \texttt{wasi:http/incoming-handler} interface provides a standards-compliant \acs{HTTP} handler model without the proprietary socket workarounds historically required under \acs{WASI}~P1. The full 4-variant primary matrix is described in \hyperref[chap:methodology]{Chapter~\ref{chap:methodology}} and the runtime selection rationale is detailed in \S\ref{sec:runtime_landscape}.
 
 \subsection{WebAssembly Runtimes: A Comparative Overview}
 \label{sec:runtime_landscape}
@@ -207,7 +207,6 @@ The server-side \acs{Wasm} ecosystem includes several runtimes with distinct des
         \hline
         \textbf{Runtime} & \textbf{Backend} & \textbf{\acs{WASI}~P1} & \textbf{\acs{WASI}~P2} & \textbf{\acs{K8s} Shim} & \textbf{Primary Use Case} & \textbf{Role in Thesis} \\
         \hline
-        \acs{WasmEdge}   & LLVM         & \checkmark & Partial    & crun             & Cloud-native, \acs{TCP} & \textbf{Optional (Appendix B)} \\
         Spin/SpinKube    & Cranelift    & ---        & \checkmark & containerd-shim-spin & \acs{HTTP} handler P2 & \textbf{Selected (Primary)} \\
         Wasmtime   & Cranelift    & \checkmark & \checkmark & runwasi          & Reference, server-side & TinyGo P1 gap \\
         Wasmer     & Cranelift/LLVM & \checkmark & Partial  & Yes              & Edge, embedded        & Proprietary (WASIX) \\
@@ -231,14 +230,12 @@ The server-side \acs{Wasm} ecosystem includes several runtimes with distinct des
 The runtime selection process evaluated all runtimes in Table~\ref{tab:wasm_runtimes} against five criteria derived from the thesis experimental requirements:
 
 \begin{enumerate}
-    \item \textbf{Standardised \acs{WASI}~P2 \acs{HTTP} interface:} SpinKube implements \texttt{wasi:http/incoming-handler} from the \acs{WASI}~P2 Component Model. This eliminates the proprietary socket \acs{ABI} required by \acs{WASI}~P1 (e.g.\ \texttt{wasmedge\_wasi\_socket}, \texttt{//go:wasmimport} socket directives)---no custom server code required. Note: TinyGo's \texttt{-target=wasip2} cannot be used (it hardwires \texttt{wasi:cli/command}); the Spin Go \acs{SDK} (\texttt{github.com/spinframework/spin-go-sdk/v2}, \texttt{-target=wasip1}) provides \texttt{spinhttp.Handle()} instead.
-    \item \textbf{Wasmtime/Cranelift backend:} Spin embeds Wasmtime, the Bytecode Alliance reference implementation with the most complete \acs{WASI}~P2 Component Model support. Cranelift's \acs{JIT} provides competitive performance without the \acs{LLVM} compilation overhead present in \acs{WasmEdge}.
-    \item \textbf{\acs{CNCF} governance:} SpinKube was accepted as a \acs{CNCF} Sandbox project in January~2025, providing comparable open-source governance to \acs{WasmEdge} (\acs{CNCF} graduated). Reproducibility and long-term availability are ensured.
-    \item \textbf{First-class language support:} The Spin \acs{SDK} for Rust (\texttt{spin-sdk~=~"5.2.0"}) provides a \texttt{\#[http\_component]} macro generating a standards-compliant \acs{WASI}~P2 component with no \texttt{wasmedge\_wasi\_socket} dependency. The Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}) provides \texttt{spinhttp.Handle()} with standard \texttt{net/http} types---identical handler signatures to the Docker variants.
+    \item \textbf{Standardised \acs{WASI}~P2 \acs{HTTP} interface:} SpinKube implements \texttt{wasi:http/incoming-handler} from the \acs{WASI}~P2 Component Model. The component exports a single handler function; no custom \acs{TCP} accept loop or socket plumbing is required. Note: TinyGo's \texttt{-target=wasip2} cannot be used (it hardwires \texttt{wasi:cli/command}); the Spin Go \acs{SDK} (\texttt{github.com/spinframework/spin-go-sdk/v2}, \texttt{-target=wasip1}) provides \texttt{spinhttp.Handle()} instead.
+    \item \textbf{Wasmtime/Cranelift backend:} Spin embeds Wasmtime, the Bytecode Alliance reference implementation with the most complete \acs{WASI}~P2 Component Model support.
+    \item \textbf{\acs{CNCF} governance:} SpinKube was accepted as a \acs{CNCF} Sandbox project in January~2025, providing open-source governance and long-term availability suitable for academic reproducibility.
+    \item \textbf{First-class language support:} The Spin \acs{SDK} for Rust (\texttt{spin-sdk~=~"5.2.0"}) provides a \texttt{\#[http\_component]} macro generating a standards-compliant \acs{WASI}~P2 component. The Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}) provides \texttt{spinhttp.Handle()} with standard \texttt{net/http} types---identical handler signatures to the Docker variants.
     \item \textbf{Direct \acs{HTTP}-in/\acs{HTTP}-out model:} Unlike \acs{WasmCloud}, which routes every request through a \acs{NATS} message broker (adding a network hop that contaminates latency measurements), SpinKube's request-handler model is structurally closest to a Docker \acs{HTTP} microservice, making it the scientifically fairest \acs{WASI}~P2 comparison point.
 \end{enumerate}
-
-For historical context on the \acs{WasmEdge}/\acs{WASI}~P1 selection rationale, the four binding constraints that originally forced \acs{WasmEdge}, and the \acs{WASI}~P1 benchmark results, see Appendix~\ref{app:wasmedge_p1}.
 
 The taxonomy of all evaluated tools---runtimes, shims, frameworks, and cloud platforms---is illustrated in Figure~\ref{fig:wasm_k8s_taxonomy}.
 
@@ -258,13 +255,13 @@ The integration of \acs{Wasm} into \acs{K8s} has evolved through several distinc
 
 Several higher-level operators have been developed to simplify the operational experience of running \acs{Wasm} workloads on \acs{K8s}.
 
-\textbf{SpinKube}~\cite{spinkube2024} ships a dedicated containerd shim (\texttt{containerd-shim-spin-v2}) that embeds the Spin runtime, which in turn embeds Wasmtime/Cranelift. It adds a \texttt{SpinApp} \acs{CRD} that manages the lifecycle of Spin-based \acs{Wasm} applications. SpinKube was accepted as a \acs{CNCF} Sandbox project in January 2025. It is the selected \acs{Wasm} framework for the primary benchmark variants in this thesis (\texttt{spin/rust}, \texttt{spin/tinygo}). An important distinction: \textbf{Spin uses Wasmtime, not \acs{WasmEdge}}---relative to the optional \acs{WASI}~P1 variants (Appendix~\ref{app:wasmedge_p1}), SpinKube introduces two simultaneous changes: the \acs{WASI} version (P1~$\to$~P2) and the \acs{JIT} backend (\acs{WasmEdge}/\acs{LLVM}~$\to$~Wasmtime/Cranelift). This is an acknowledged confounding variable documented in \hyperref[chap:discussion]{Chapter~\ref{chap:discussion}}.
+\textbf{SpinKube}~\cite{spinkube2024} ships a dedicated containerd shim (\texttt{containerd-shim-spin-v2}) that embeds the Spin runtime, which in turn embeds Wasmtime/Cranelift. It adds a \texttt{SpinApp} \acs{CRD} that manages the lifecycle of Spin-based \acs{Wasm} applications. SpinKube was accepted as a \acs{CNCF} Sandbox project in January 2025. It is the selected \acs{Wasm} framework for the primary benchmark variants in this thesis (\texttt{spin/rust}, \texttt{spin/tinygo}).
 
 \textbf{WasmCloud Operator} bridges \acs{K8s} scheduling with the WasmCloud lattice, routing pod scheduling decisions to WasmCloud's \acs{NATS}-based actor runtime. WasmCloud was evaluated and rejected for the \acs{WASI}~P2 variants: its \acs{NATS} broker adds a network hop that contaminates latency measurements, making a direct performance comparison against Docker \acs{HTTP} microservices scientifically unsound.
 
 \textbf{KWasm} is a \acs{K8s} operator that automates the installation of \acs{Wasm} runtime shims on cluster nodes via a DaemonSet, replacing the manual cloud-init bootstrap approach. KWasm is a meta-tool (shim installer), not a runtime; it was not used in this thesis.
 
-\textbf{For the primary \acs{WASI}~P2 variants (wasm-rust, wasm-tinygo)}, the \texttt{SpinApp} \acs{CRD} (managed by the SpinOperator) is used, as it is the canonical deployment mechanism for SpinKube applications. \textbf{For the optional \acs{WASI}~P1 variants} (see Appendix~\ref{app:wasmedge_p1}), raw \texttt{RuntimeClass} + standard \texttt{Deployment} manifests with \acs{OCI} annotations are used.
+For the primary \acs{WASI}~P2 variants (wasm-rust, wasm-tinygo), the \texttt{SpinApp} \acs{CRD} (managed by the SpinOperator) is used, as it is the canonical deployment mechanism for SpinKube applications.
 
 \subsubsection{RuntimeClass: The Bridge Between Paradigms}
 
@@ -273,9 +270,7 @@ The \acs{K8s} \texttt{RuntimeClass} \acs{API} is the key mechanism that enables 
 This thesis registers the following \texttt{RuntimeClass} objects:
 
 \begin{itemize}
-  \item \texttt{wasmtime-spin} --- maps to \texttt{containerd-shim-spin-v2}~v0.17.0 (SpinKube), which embeds Spin and Wasmtime/Cranelift. Used by the \acs{WASI}~P2 primary variants (\texttt{spin/rust}, \texttt{spin/tinygo}) via \texttt{SpinApp} \acs{CRD} resources managed by the SpinOperator. This is the default \acs{Wasm} \texttt{RuntimeClass}.
-
-  \item \texttt{wasmedge} (optional) --- maps to \texttt{crun}~v1.22 compiled \texttt{--with-wasmedge}, available when \texttt{ENABLE\_WASMEDGE=true} is set during cluster provisioning. Used only for the optional \acs{WASI}~P1 comparison (see Appendix~\ref{app:wasmedge_p1}).
+  \item \texttt{wasmtime-spin} --- maps to \texttt{containerd-shim-spin-v2}~v0.17.0 (SpinKube), which embeds Spin and Wasmtime/Cranelift. Used by the \acs{WASI}~P2 primary variants (\texttt{spin/rust}, \texttt{spin/tinygo}) via \texttt{SpinApp} \acs{CRD} resources managed by the SpinOperator. This is the \acs{Wasm} \texttt{RuntimeClass} used in this thesis.
 \end{itemize}
 
 \noindent The complete \acs{K8s} configuration for all four primary variants is detailed in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
@@ -313,9 +308,7 @@ The server-side \acs{Wasm} ecosystem comprises overlapping layers of runtimes, s
 The key architectural relationships visible in Figure~\ref{fig:wasm_k8s_taxonomy} are:
 
 \begin{itemize}
-    \item \textbf{Wasmtime} (Layer~1) is the \acs{WASI}~P2 reference implementation and underpins both the \texttt{containerd-shim-spin-v2} shim (Layer~3) and the Fermyon Spin framework (Layer~4). Crucially, \textbf{Spin uses Wasmtime internally, not \acs{WasmEdge}} --- a point of frequent confusion that is especially consequential for this thesis, because the \acs{WASI}~P2 variants therefore run on a different \acs{JIT} backend than the \acs{WASI}~P1 variants.
-
-    \item \textbf{\acs{WasmEdge}} (Layer~1, optional) connects to Layer~3 via \texttt{crun}~v1.22 compiled \texttt{--with-wasmedge}. This path is available for optional \acs{WASI}~P1 comparison when \texttt{ENABLE\_WASMEDGE=true} is set during cluster provisioning; it is not used in the primary 4-variant experiment. See Appendix~\ref{app:wasmedge_p1} for \acs{WASI}~P1 implementation details and benchmark results.
+    \item \textbf{Wasmtime} (Layer~1) is the \acs{WASI}~P2 reference implementation and underpins both the \texttt{containerd-shim-spin-v2} shim (Layer~3) and the Fermyon Spin framework (Layer~4). Spin embeds Wasmtime directly: the \acs{WASI}~P2 variants in this thesis therefore run on the Cranelift \acs{JIT} backend without any further indirection.
 
     \item \textbf{KWasm} (Layer~3) is a shim installer (DaemonSet-based), not itself a \acs{Wasm} runtime. It was evaluated and rejected in favour of a manual cloud-init bootstrap to minimise abstraction layers.
 

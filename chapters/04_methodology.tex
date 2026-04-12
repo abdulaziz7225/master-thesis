@@ -10,7 +10,7 @@ This thesis employs a \textit{mixed-methods} approach combining a quantitative c
 
 The primary quantitative experiment follows a 2$\times$2 variant matrix: runtime (Docker/\texttt{runc} vs.\ \acs{Wasm}/SpinKube) crossed with language family (Rust vs.\ Go-family). This produces four primary implementation variants deployed to an isolated, reproducible cloud environment and subjected to identical load testing and startup-time measurements. All variants implement the same \acs{HTTP} \acs{API} and the same core algorithm, ensuring that any performance difference is attributable to the execution environment rather than to differences in application logic.
 
-The \acs{Wasm} variants use the standardised \texttt{wasi:http/incoming-handler} Component Model interface (\acs{WASI}~P2) via Fermyon Spin and Wasmtime/Cranelift. This design choice reflects the current production-ready trajectory of \acs{Wasm} on \acs{K8s}: \acs{WASI}~P2's component model eliminates the proprietary socket workarounds required by \acs{WASI}~P1. For historical context on the \acs{WASI}~P1 approach (WasmEdge, proprietary socket \acs{ABI}), including its benchmark results and implementation constraints, see Appendix~\ref{app:wasmedge_p1}.
+The \acs{Wasm} variants use the standardised \texttt{wasi:http/incoming-handler} Component Model interface (\acs{WASI}~P2) via Fermyon Spin and Wasmtime/Cranelift. This design choice reflects the current production-ready trajectory of \acs{Wasm} on \acs{K8s}: the \acs{WASI}~P2 Component Model provides a standards-compliant \acs{HTTP} handler interface, replacing the proprietary socket workarounds historically required under \acs{WASI}~P1.
 
 An important design choice is that this study does \textit{not} attempt to isolate the pure runtime overhead by holding the language constant across all four variants. Instead, it deliberately compares the two dominant paradigms in their \textit{native} technological contexts: Docker with Go (the industry standard), Docker with Rust (a deconfounding baseline), and \acs{Wasm} with Rust and TinyGo (the \acs{Wasm}-native ecosystem). This design reflects the real-world decision an engineering team faces when evaluating a migration from Docker to \acs{Wasm}, while the Rust-on-Docker baseline enables partial deconfounding of the language variable (see Section~\ref{sec:tech_selection}).
 
@@ -23,7 +23,7 @@ The Docker/Golang variant serves as the primary baseline against which all other
 
 \subsection{Docker/Rust: The Deconfounding Baseline}
 
-A second Docker-based baseline using Rust is included specifically to enable a language-controlled comparison. Because both docker-rust and wasm-rust use the same language, the performance delta between these two variants isolates (approximately) the overhead introduced by the \acs{WasmEdge} runtime, \acs{SFI} bounds-checking, and the \acs{WASI}~P1 single-threaded I/O constraint, independent of language-level differences such as memory management strategy.
+A second Docker-based baseline using Rust is included specifically to enable a language-controlled comparison. Because both docker-rust and wasm-rust use the same language, the performance delta between these two variants isolates (approximately) the overhead introduced by the SpinKube/Wasmtime runtime, \acs{SFI} bounds-checking, and the \texttt{max\_instances~=~1} single-instance dispatch constraint, independent of language-level differences such as memory management strategy.
 
 Rust's axum/Tokio async stack provides full multi-threaded, asynchronous I/O---the maximum performance achievable on the Docker/\texttt{runc} path---making the docker-rust variant also a useful upper-bound reference for the \acs{Wasm} variants.
 
@@ -33,8 +33,6 @@ Rust's axum/Tokio async stack provides full multi-threaded, asynchronous I/O---t
 
 The wasm-rust variant uses \texttt{cargo component build --release} (via \texttt{cargo-component}) to compile to a \acs{WASI}~P2 component. The resulting \texttt{.wasm} binary is published as a Spin \acs{OCI} artifact via \texttt{spin registry push}. Spin's Wasmtime/Cranelift host handles the \acs{HTTP} listener, request parsing, and response dispatch---the component itself exports only a single handler function, eliminating any need for manual \acs{TCP} socket management.
 
-For historical context on the \acs{WASI}~P1 ecosystem constraints (unmaintained \texttt{hyper\_wasi}/\texttt{tokio\_wasi} forks, \texttt{wasmedge\_wasi\_socket} proprietary crate, single-threaded \texttt{accept()} loop), see Appendix~\ref{app:wasmedge_p1}.
-
 \subsection{Wasm/TinyGo: The Secondary Experimental Variant}
 
 TinyGo~\cite{tinygo2024} is a Go-compatible compiler optimised for embedded systems and \acs{Wasm} targets. It was selected to enable a partial Go-to-Go comparison with the docker-golang baseline, testing whether the concurrency model difference between Docker's goroutine scheduler and \acs{Wasm}'s request-handler model produces measurable performance differences when the language is held constant.
@@ -43,13 +41,11 @@ Standard Go supports \texttt{GOOS=wasip1} since Go~1.21~\cite{goblogwasi2024}, b
 
 The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). The handler function receives standard \texttt{net/http.ResponseWriter} and \texttt{*http.Request} arguments---identical to the docker-golang handler. \textbf{No custom socket code is required.} TinyGo's \texttt{-target=wasip2} flag cannot be used here: it hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK} uses a \acs{CGo} layer to export \texttt{fermyon:spin/inbound-http}, which Spin/Wasmtime accepts as a valid \acs{HTTP} trigger interface. The \texttt{-target=wasip1} flag is therefore required.
 
-For historical context on the \acs{WASI}~P1 TinyGo constraints (\texttt{net/http} server broken since v0.28, custom \texttt{server.go} with \texttt{//go:wasmimport} socket directives, \texttt{-gc=conservative} requirement), see Appendix~\ref{app:wasmedge_p1}.
-
 \subsection{Orchestration: K3s with RuntimeClass}
 
 K3s~\cite{k3s2024rancher} v1.35.2+k3s1, a lightweight \acs{K8s} distribution developed by \acs{SUSE} Rancher, was chosen as the orchestration layer. K3s reduces the memory footprint of the \acs{K8s} control plane significantly compared to a full \acs{K8s} deployment, which is important given the 8\,GB \acs{RAM} constraint of the benchmark \acs{VM}. K3s uses containerd as its \acs{CRI}, which is necessary for the \texttt{RuntimeClass}/SpinKube integration.
 
-The \acs{Wasm} \texttt{RuntimeClass} (\texttt{wasmtime-spin}) routes pods to \texttt{containerd-shim-spin-v2}~v0.17.0, which embeds Spin and Wasmtime/Cranelift internally to execute \acs{WASI}~P2 components. Docker pods use the default \texttt{runc} path unchanged. This hybrid configuration allows both paradigms to run side-by-side with directly comparable \acs{K8s} resource management. An optional \texttt{wasmedge} \texttt{RuntimeClass} can be activated for \acs{WASI}~P1 comparison (see Appendix~\ref{app:wasmedge_p1}).
+The \acs{Wasm} \texttt{RuntimeClass} (\texttt{wasmtime-spin}) routes pods to \texttt{containerd-shim-spin-v2}~v0.17.0, which embeds Spin and Wasmtime/Cranelift internally to execute \acs{WASI}~P2 components. Docker pods use the default \texttt{runc} path unchanged. This hybrid configuration allows both paradigms to run side-by-side with directly comparable \acs{K8s} resource management.
 
 \section{Benchmark Workload Design}
 \label{sec:workload_design}

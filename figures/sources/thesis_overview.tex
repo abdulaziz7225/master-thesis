@@ -51,16 +51,16 @@
   \node[tbox=WasmPurple, text width=3.4cm, minimum height=2.2cm, inner sep=5pt,
     right=1.6cm of dru] (wru) {
       \textbf{wasm-rust}\\[2pt]
-      Rust~1.94, WASI~P1\\
-      Sync single-thread\\[2pt]
+      Rust~1.94, WASI~P2\\
+      Spin handler\\[2pt]
       \textit{0.13\,MB}
     };
 
   \node[tbox=WasmPurple, text width=3.4cm, minimum height=2.2cm, inner sep=5pt,
     right=0.5cm of wru] (wgo) {
       \textbf{wasm-tinygo}\\[2pt]
-      TinyGo~0.40, WASI~P1\\
-      Sync single-thread\\[2pt]
+      TinyGo~0.40, wasip1\\
+      Spin handler\\[2pt]
       \textit{2.26\,MB}
     };
 
@@ -71,25 +71,25 @@
     };
 
   \node[tbox=WasmPurple, minimum width=8.1cm, minimum height=0.75cm,
-    above=0.85cm of $(wru.north)!0.5!(wgo.north)$] (wasmedge) {
-      \textbf{WebAssembly / crun + WasmEdge~0.14.1}
+    above=0.85cm of $(wru.north)!0.5!(wgo.north)$] (spinshim) {
+      \textbf{WebAssembly / containerd-shim-spin-v2 (Wasmtime/Cranelift)}
     };
 
   % Arrows: runtime -> variants
   \draw[arr=DockerBlue] (runc.south) -- ++(0,-0.15) -| (dgo.north);
   \draw[arr=DockerBlue] (runc.south) -- ++(0,-0.15) -| (dru.north);
-  \draw[arr=WasmPurple] (wasmedge.south) -- ++(0,-0.15) -| (wru.north);
-  \draw[arr=WasmPurple] (wasmedge.south) -- ++(0,-0.15) -| (wgo.north);
+  \draw[arr=WasmPurple] (spinshim.south) -- ++(0,-0.15) -| (wru.north);
+  \draw[arr=WasmPurple] (spinshim.south) -- ++(0,-0.15) -| (wgo.north);
 
   % === containerd (top runtime layer) ===
   \node[tbox=CdGray, minimum width=17.3cm, minimum height=0.75cm,
-    above=0.85cm of $(runc.north)!0.5!(wasmedge.north)$] (containerd) {
+    above=0.85cm of $(runc.north)!0.5!(spinshim.north)$] (containerd) {
       \textbf{containerd}
     };
 
   % Arrows: containerd -> runtimes
   \draw[arr=CdGray] (containerd.south) -| (runc.north);
-  \draw[arr=CdGray] (containerd.south) -| (wasmedge.north);
+  \draw[arr=CdGray] (containerd.south) -| (spinshim.north);
 
   % === K8s cluster bounding box (background layer) ===
   \begin{pgfonlayer}{background}
