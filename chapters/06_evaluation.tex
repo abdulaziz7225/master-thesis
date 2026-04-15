@@ -17,10 +17,10 @@ All measurements will be taken on the dedicated Hetzner Cloud \acs{VM} described
         \textbf{Parameter} & \textbf{Value} \\
         \hline
         Cloud Provider      & Hetzner Cloud \\
-        VM Type             & ccx13 (2$\times$ AMD EPYC vCPU, 8\,GB RAM, 80\,GB NVMe) \\
+        VM Type             & ccx23 (4$\times$ AMD EPYC vCPU, 16\,GB RAM, 160\,GB NVMe) \\
         OS                  & Ubuntu 24.04 LTS \\
-        Kubernetes          & K3s v1.35.2+k3s1 \\
-        Container Runtime   & containerd (runc for Docker; containerd-shim-spin-v2 v0.17.0 for Wasm) \\
+        Kubernetes          & v1.34.x (kubeadm; Flannel CNI; local-path StorageClass) \\
+        Container Runtime   & containerd 2.x (runc for Docker; containerd-shim-spin-v2 v0.17.0 for Wasm) \\
         Wasm Runtime        & Wasmtime/Cranelift (via SpinKube) \\
         Load Generator      & k6, 50 \acp{VU}, 20\,s ramp-up, 60\,s hold \\
         Monitoring          & kube-prometheus-stack, 5\,s scrape interval \\

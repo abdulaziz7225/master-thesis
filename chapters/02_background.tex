@@ -237,8 +237,6 @@ The runtime selection process evaluated all runtimes in Table~\ref{tab:wasm_runt
     \item \textbf{Direct \acs{HTTP}-in/\acs{HTTP}-out model:} Unlike \acs{WasmCloud}, which routes every request through a \acs{NATS} message broker (adding a network hop that contaminates latency measurements), SpinKube's request-handler model is structurally closest to a Docker \acs{HTTP} microservice, making it the scientifically fairest \acs{WASI}~P2 comparison point.
 \end{enumerate}
 
-The taxonomy of all evaluated tools---runtimes, shims, frameworks, and cloud platforms---is illustrated in Figure~\ref{fig:wasm_k8s_taxonomy}.
-
 \subsection{WebAssembly in Kubernetes}
 \label{sec:wasm_k8s}
 This subsection describes how \acs{Wasm} workloads are integrated into \acs{K8s} clusters, culminating in the \texttt{RuntimeClass}-based mechanism used in this thesis. This integration layer is what makes the side-by-side comparison of Docker and \acs{Wasm} variants in a single cluster possible.
@@ -285,32 +283,3 @@ Applying \acs{Wasm} and \acs{WASI} to the server yields a deployment artifact th
 \end{enumerate}
 
 By utilizing \acs{WASI} shims (such as \texttt{runwasi}~\cite{runwasi2024}), \acs{K8s} can now orchestrate these high-density \acs{Wasm} workloads directly alongside traditional Docker containers, establishing the precise technological foundation for the comparative analysis executed in this research.
-
-\subsection{Wasm Ecosystem Taxonomy}
-\label{sec:wasm_taxonomy}
-
-The server-side \acs{Wasm} ecosystem comprises overlapping layers of runtimes, standards, \acs{K8s} shims, application frameworks, and cloud platforms. Figure~\ref{fig:wasm_k8s_taxonomy} maps these layers and identifies where each evaluated tool sits in the stack. Tools are colour-coded by their role in this thesis: green indicates tools used in the experiment, amber indicates tools evaluated and rejected with documented rationale, and grey indicates tools outside the scope of this research.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{figures/wasm_kubernetes_stack_taxonomy.pdf}
-    \caption{Five-layer taxonomy of the server-side \acs{Wasm} ecosystem on Kubernetes.
-    Layer~1: standalone \acs{Wasm} runtimes with their \acs{JIT} backends.
-    Layer~2: \acs{WASI} standard versions that runtimes implement.
-    Layer~3: containerd shims that bridge \acs{K8s} pod scheduling to \acs{Wasm} runtimes.
-    Layer~4: \acs{HTTP} application frameworks built on top of shims.
-    Layer~5: managed cloud and edge platforms.
-    Green = used in this thesis; Amber = evaluated and rejected; Grey = out of scope.
-    Source: \texttt{figures/sources/wasm\_kubernetes\_stack\_taxonomy.tex}.}
-    \label{fig:wasm_k8s_taxonomy}
-\end{figure}
-
-The key architectural relationships visible in Figure~\ref{fig:wasm_k8s_taxonomy} are:
-
-\begin{itemize}
-    \item \textbf{Wasmtime} (Layer~1) is the \acs{WASI}~P2 reference implementation and underpins both the \texttt{containerd-shim-spin-v2} shim (Layer~3) and the Fermyon Spin framework (Layer~4). Spin embeds Wasmtime directly: the \acs{WASI}~P2 variants in this thesis therefore run on the Cranelift \acs{JIT} backend without any further indirection.
-
-    \item \textbf{KWasm} (Layer~3) is a shim installer (DaemonSet-based), not itself a \acs{Wasm} runtime. It was evaluated and rejected in favour of a manual cloud-init bootstrap to minimise abstraction layers.
-
-    \item \textbf{WasmCloud} (Layer~4) was rejected for the \acs{WASI}~P2 variants because its \acs{NATS} actor model routes every \acs{HTTP} request through a message broker, adding latency that would confound the \acs{Wasm} vs.\ Docker comparison.
-\end{itemize}

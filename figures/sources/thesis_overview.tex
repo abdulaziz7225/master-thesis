@@ -32,47 +32,44 @@
 \begin{tikzpicture}[font=\sffamily]
 
   % === Variant boxes (bottom layer) ===
-  \node[tbox=DockerBlue, text width=3.4cm, minimum height=2.2cm, inner sep=5pt]
+  \node[tbox=DockerBlue, text width=3.4cm, minimum height=1.8cm, inner sep=5pt]
     (dgo) at (0,0) {
       \textbf{docker-golang}\\[2pt]
       Go~1.26, net/http\\
-      Goroutines (M:N)\\[2pt]
-      \textit{6.00\,MB}
+      Goroutines (M:N)
     };
 
-  \node[tbox=DockerBlue, text width=3.4cm, minimum height=2.2cm, inner sep=5pt,
+  \node[tbox=DockerBlue, text width=3.4cm, minimum height=1.8cm, inner sep=5pt,
     right=0.5cm of dgo] (dru) {
       \textbf{docker-rust}\\[2pt]
       Rust~1.94, axum\\
-      Async multi-thread\\[2pt]
-      \textit{2.08\,MB}
+      Async multi-thread
     };
 
-  \node[tbox=WasmPurple, text width=3.4cm, minimum height=2.2cm, inner sep=5pt,
+  \node[tbox=WasmPurple, text width=3.4cm, minimum height=1.8cm, inner sep=5pt,
     right=1.6cm of dru] (wru) {
       \textbf{wasm-rust}\\[2pt]
       Rust~1.94, WASI~P2\\
-      Spin handler\\[2pt]
-      \textit{0.13\,MB}
+      Spin handler
     };
 
-  \node[tbox=WasmPurple, text width=3.4cm, minimum height=2.2cm, inner sep=5pt,
+  \node[tbox=WasmPurple, text width=3.4cm, minimum height=1.8cm, inner sep=5pt,
     right=0.5cm of wru] (wgo) {
       \textbf{wasm-tinygo}\\[2pt]
       TinyGo~0.40, wasip1\\
-      Spin handler\\[2pt]
-      \textit{2.26\,MB}
+      Spin handler
     };
 
   % === Runtime boxes (middle layer) ===
-  \node[tbox=DockerBlue, minimum width=8.1cm, minimum height=0.75cm,
+  \node[tbox=DockerBlue, minimum width=8.1cm, minimum height=1.0cm,
     above=0.85cm of $(dgo.north)!0.5!(dru.north)$] (runc) {
       \textbf{Docker / runc (OCI)}
     };
 
-  \node[tbox=WasmPurple, minimum width=8.1cm, minimum height=0.75cm,
+  \node[tbox=WasmPurple, minimum width=8.1cm, minimum height=1.0cm,
     above=0.85cm of $(wru.north)!0.5!(wgo.north)$] (spinshim) {
-      \textbf{WebAssembly / containerd-shim-spin-v2 (Wasmtime/Cranelift)}
+      \textbf{WebAssembly}\\
+      containerd-shim-spin-v2 \textit{(Wasmtime/Cranelift)}
     };
 
   % Arrows: runtime -> variants
@@ -102,8 +99,8 @@
   % K8s cluster title (above the box)
   \node[above=2pt of k8s.north, anchor=south,
     font=\sffamily\bfseries\small, text=K8sBlue] {
-    Kubernetes Cluster (K3s~v1.35) \textemdash{}
-    Hetzner Cloud ccx13 (2\,AMD EPYC vCPUs, 8\,GB RAM)
+    Kubernetes Cluster (kubeadm~v1.34) \textemdash{}
+    Hetzner Cloud ccx23 (4\,AMD EPYC vCPUs, 16\,GB RAM)
   };
 
   % === Metrics bar (below K8s box) ===
