@@ -8,6 +8,23 @@
 
 \section{Description}
 \subsection{How to access}
+\label{sec:repro_how_to_access}
+
+The complete set of artefacts supporting the experiments in this thesis is distributed across three public Git repositories hosted on GitHub. Each repository is referenced from its corresponding chapter; this subsection groups them together as a single point of entry.
+
+\begin{itemize}
+    \item \textbf{Infrastructure setup} \textendash{} \cite{musaev2026thesisinfra}.
+          Kubernetes (\texttt{kubeadm}) and SpinKube cluster provisioning, Hetzner Cloud Terraform modules, cloud-init bootstrap scripts, and the \texttt{containerd}~/ \texttt{containerd-shim-spin-v2} installation manifests used to build the four-variant experimental cluster described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
+
+    \item \textbf{Benchmark implementations and result data} \textendash{} \cite{musaev2026thesisexperiments}.
+          The four primary benchmark variants (\texttt{docker-golang}, \texttt{docker-rust}, \texttt{wasm-rust}, \texttt{wasm-tinygo}), the k6 load-generator configurations, the Prometheus scrape rules, and the raw \texttt{results/} directory referenced throughout \hyperref[chap:evaluation]{Chapter~\ref{chap:evaluation}}.
+
+    \item \textbf{Thesis source} \textendash{} \cite{musaev2026thesissource}.
+          The \LaTeX{} source of this document, including all chapter \texttt{.tex} files, the bibliography, TikZ figure sources, and the build instructions in the \texttt{Makefile}.
+\end{itemize}
+
+All three repositories are tagged at the commit corresponding to thesis submission so that a reader can clone the exact state of the artefacts that produced the reported results.
+
 \subsection{Hardware dependencies}
 \subsection{Software dependencies}
 
