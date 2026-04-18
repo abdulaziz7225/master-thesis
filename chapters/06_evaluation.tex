@@ -1,12 +1,12 @@
 \chapter{Evaluation}
 \label{chap:evaluation}
 
-The evaluation phase of this thesis is structured around the four primary benchmark variants (wasm-rust, wasm-tinygo, docker-rust, docker-golang) using SpinKube/Wasmtime as the \acs{Wasm} runtime. Benchmark results are pending cluster execution on the Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. This chapter presents the evaluation framework, the metric collection methodology, and the developer experience assessment (the one metric that can be assessed without cluster execution).
+The evaluation phase of this thesis is structured around the four primary benchmark variants (wasm-rust, wasm-tinygo, docker-rust, docker-golang) using SpinKube/Wasmtime as the \acs{Wasm} runtime. Two workloads are evaluated: a \acs{CPU}-bound prime-sieve benchmark and a memory-bandwidth benchmark (heap allocation followed by a SHA-256 hash over the buffer). All measurements were collected on the Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. This chapter presents the metric-by-metric quantitative results for both workloads, followed by the qualitative developer experience assessment.
 
 \section{Scope and Environment}
 \label{sec:eval_scope}
 
-All measurements will be taken on the dedicated Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. Table~\ref{tab:benchmark_environment} summarises the environment. The k6 load generator runs on the same \acs{VM}, connecting to each variant via its localhost \acs{NodePort}, eliminating network latency as a confounding variable.
+All measurements were taken on the dedicated Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. Table~\ref{tab:benchmark_environment} summarises the environment. The k6 load generator runs on the same \acs{VM}, connecting to each variant via its localhost \acs{NodePort}, eliminating network latency as a confounding variable. Each metric section that follows presents both benchmarks side-by-side under the \emph{limited} concurrency configuration (single worker per variant); the \emph{unlimited} scaling configuration is reported separately in Section~\ref{sec:eval_performance} (Scaling Experiment).
 
 \begin{table}[htbp]
     \centering
@@ -22,9 +22,10 @@ All measurements will be taken on the dedicated Hetzner Cloud \acs{VM} described
         Kubernetes          & v1.34.x (kubeadm; Flannel CNI; local-path StorageClass) \\
         Container Runtime   & containerd 2.x (runc for Docker; containerd-shim-spin-v2 v0.17.0 for Wasm) \\
         Wasm Runtime        & Wasmtime/Cranelift (via SpinKube) \\
-        Load Generator      & k6, 50 \acp{VU}, 20\,s ramp-up, 60\,s hold \\
-        Monitoring          & kube-prometheus-stack, 5\,s scrape interval \\
-        Benchmark Workload  & Sieve of Eratosthenes, \texttt{limit=100\,000} \\
+        Load Generator       & k6, 50 \acp{VU}, 20\,s ramp-up, 60\,s hold \\
+        Monitoring           & kube-prometheus-stack, 5\,s scrape interval \\
+        Benchmark 1 (CPU)    & Sieve of Eratosthenes, \texttt{limit=100\,000} \\
+        Benchmark 2 (memory) & Heap allocation + SHA-256 over a 64\,KB buffer \\
         \hline
     \end{tabular}
 \end{table}
@@ -32,21 +33,58 @@ All measurements will be taken on the dedicated Hetzner Cloud \acs{VM} described
 \section{OCI Artifact Size}
 \label{sec:eval_artifact_size}
 
-\textit{Measurements pending cluster execution. Run \texttt{benchmarks/01-prime-sieve/run\_experiment.sh} on the Hetzner cluster to populate this section.}
+Methodology: Docker variant sizes are collected via \texttt{docker inspect}; Spin variant sizes are approximated from the compiled \texttt{.wasm} artifact (Spin \acs{OCI} media types are not inspectable via \texttt{docker inspect}). Per-variant artifact sizes for both benchmarks are reported in Figure~\ref{fig:image_size_limited}.
 
-Expected methodology: Docker variant sizes collected via \texttt{docker inspect}; Spin variant sizes approximated from the compiled \texttt{.wasm} artifact (Spin \acs{OCI} media types are not inspectable via \texttt{docker inspect}). Results saved to \texttt{results/01-prime-sieve/image\_sizes.json}.
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/limited/image_size.png}%
+        \label{fig:image_size_ps}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/image_size.png}%
+        \label{fig:image_size_mb}}
+    \caption{\acs{OCI} artifact size per variant for both benchmark workloads.}
+    \label{fig:image_size_limited}
+\end{figure}
 
 \section{Startup Latency}
 \label{sec:eval_startup}
 
-\textit{Measurements pending cluster execution.}
+Methodology: Six measurement runs per variant. Run~1 = cold start (image not cached on node, includes \acs{OCI} pull). Runs~2--6 = warm starts (image cached). SpinKube variants scale via \texttt{kubectl patch spinapp} (not \texttt{kubectl scale deployment}); the SpinOperator manages pod lifecycle from the \acs{CRD}. Latency is measured from the scale-to-zero command until the first \acs{HTTP}~200 response.
 
-Methodology: Six measurement runs per variant. Run~1 = cold start (image not cached on node, includes \acs{OCI} pull). Runs~2--6 = warm starts (image cached). SpinKube variants scale via \texttt{kubectl patch spinapp} (not \texttt{kubectl scale deployment}); the SpinOperator manages pod lifecycle from the \acs{CRD}. Latency is measured from the scale-to-zero command until the first \acs{HTTP}~200 response. Results saved to \texttt{results/01-prime-sieve/cold\_start.json} and \texttt{warm\_start.json}.
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/limited/cold_start.png}%
+        \label{fig:cold_start_ps}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/cold_start.png}%
+        \label{fig:cold_start_mb}}
+    \caption{Cold-start latency per variant (single observation, includes \acs{OCI} image pull).}
+    \label{fig:cold_start_limited}
+\end{figure}
 
-\subsection{Expected Startup Profile}
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/limited/warm_start.png}%
+        \label{fig:warm_start_ps}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/warm_start.png}%
+        \label{fig:warm_start_mb}}
+    \caption{Warm-start latency per variant (mean of five runs, image cached on node).}
+    \label{fig:warm_start_limited}
+\end{figure}
+
+\subsection{Observed Startup Profile}
+
+Figures~\ref{fig:cold_start_limited} and~\ref{fig:warm_start_limited} report the cold-start and warm-start latencies for both benchmarks. The discussion that follows highlights the structural factors expected to drive the observed differences:
 
 \begin{itemize}
-    \item Spin \acs{OCI} artifacts use Spin-specific media types and are typically smaller than equivalent Docker images. Cold-start latency should be lower due to faster pull times.
+    \item Spin \acs{OCI} artifacts use Spin-specific media types and are typically smaller than equivalent Docker images. Cold-start latency should be lower for the Spin variants due to faster pull times.
     \item Wasmtime/Cranelift performs \acs{JIT} compilation on first module instantiation; Cranelift is designed for fast compile times rather than maximum runtime optimisation.
     \item The SpinOperator adds a reconciliation loop between the \texttt{SpinApp} \acs{CRD} update and the pod creation; this may add a small fixed overhead ($\sim$1--2\,s) to warm-start measurements compared to direct \texttt{Deployment} scaling.
 \end{itemize}
@@ -54,31 +92,123 @@ Methodology: Six measurement runs per variant. Run~1 = cold start (image not cac
 \section{Runtime Performance Under Load}
 \label{sec:eval_performance}
 
-\textit{Measurements pending cluster execution.}
+Methodology: k6 ramping-\acs{VU} executor. 1~\acs{VU} ramps to 50~\acp{VU} over 20\,s, holds for 60\,s, ramps down. Prime-sieve requests target \texttt{GET /sieve?limit=100000\&no\_list=1}; memory-bandwidth requests target \texttt{GET /membw?size\_kb=64\&no\_hash=0}. Primary metrics: \acs{RPS}, failure rate, p50/p95/p99 end-to-end latency, and the \texttt{elapsed\_us} custom metric extracted from each \acs{JSON} response body.
 
-Methodology: k6 ramping-\acs{VU} executor. 1~\acs{VU} ramps to 50~\acp{VU} over 20\,s, holds for 60\,s, ramps down. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: \acs{RPS}, failure rate, p50/p95/p99 end-to-end latency, and the \texttt{server\_compute\_us} custom metric extracted from the \acs{JSON} response body.
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/limited/throughput.png}%
+        \label{fig:throughput_ps_lim}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/throughput.png}%
+        \label{fig:throughput_mb_lim}}
+    \caption{Throughput (requests per second) per variant in limited (single-worker) mode.}
+    \label{fig:throughput_limited}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/limited/latency.png}%
+        \label{fig:latency_ps_lim}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/latency.png}%
+        \label{fig:latency_mb_lim}}
+    \caption{End-to-end request latency (p50/p95/p99) per variant in limited mode.}
+    \label{fig:latency_limited}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/limited/error_rate.png}%
+        \label{fig:error_rate_ps_lim}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/error_rate.png}%
+        \label{fig:error_rate_mb_lim}}
+    \caption{Request failure rate per variant in limited mode.}
+    \label{fig:error_rate_limited}
+\end{figure}
+
+Figures~\ref{fig:throughput_limited},~\ref{fig:latency_limited}, and~\ref{fig:error_rate_limited} report the limited-mode throughput, latency, and failure-rate profiles respectively.
 
 \subsection{Scaling Experiment}
 
-In addition to the standard single-instance run (GOMAXPROCS=1, TOKIO\_WORKER\_THREADS=1, max\_instances=1), a second pass is performed with unlimited workers (GOMAXPROCS=2, TOKIO\_WORKER\_THREADS=2, Spin max\_instances=4). This experiment directly measures how effectively each variant exploits the available 2-vCPU environment, testing whether the request-handler model of SpinKube achieves comparable concurrency to Docker's goroutine/async models when given equivalent resources.
+In addition to the standard single-instance run (GOMAXPROCS=1, TOKIO\_WORKER\_THREADS=1, max\_instances=1), a second pass is performed with unlimited workers (GOMAXPROCS=2, TOKIO\_WORKER\_THREADS=2, Spin max\_instances=4). This experiment directly measures how effectively each variant exploits the available 2-vCPU environment, testing whether the request-handler model of SpinKube achieves comparable concurrency to Docker's goroutine/async models when given equivalent resources. The corresponding throughput and latency curves are reported in Figures~\ref{fig:throughput_unlimited} and~\ref{fig:latency_unlimited}; Figure~\ref{fig:rps_over_time_ps_unlim} additionally shows the per-second \acs{RPS} time series across the 80-second k6 window for the prime-sieve workload (the memory-bandwidth experiment does not emit an equivalent time-series chart).
 
-\subsection{Expected Throughput Profile}
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/unlimited/throughput.png}%
+        \label{fig:throughput_ps_unlim}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/unlimited/throughput.png}%
+        \label{fig:throughput_mb_unlim}}
+    \caption{Throughput (requests per second) per variant in unlimited (scaling) mode.}
+    \label{fig:throughput_unlimited}
+\end{figure}
 
-SpinKube's request-handler model dispatches each incoming request to a Wasm instance from a pool sized by \texttt{max\_instances} in \texttt{spin.toml}. With \texttt{max\_instances=1} (the limited mode used for the primary fairness comparison), Spin processes one request at a time; with \texttt{max\_instances=4} (the unlimited mode used in the scaling experiment), Spin dispatches concurrently across instances. Pending results will determine how the Wasm throughput compares to Docker's goroutine/async concurrency models under equivalent resource budgets.
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/unlimited/latency.png}%
+        \label{fig:latency_ps_unlim}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/unlimited/latency.png}%
+        \label{fig:latency_mb_unlim}}
+    \caption{End-to-end request latency (p50/p95/p99) per variant in unlimited mode.}
+    \label{fig:latency_unlimited}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/01-prime-sieve/unlimited/rps_over_time.png}
+    \caption{Prime-sieve requests-per-second time series across the k6 ramp-up, hold, and ramp-down phases in unlimited mode.}
+    \label{fig:rps_over_time_ps_unlim}
+\end{figure}
+
+\subsection{Observed Throughput Profile}
+
+SpinKube's request-handler model dispatches each incoming request to a Wasm instance from a pool sized by \texttt{max\_instances} in \texttt{spin.toml}. With \texttt{max\_instances=1} (the limited mode used for the primary fairness comparison) Spin processes one request at a time; with \texttt{max\_instances=4} (the unlimited mode used in the scaling experiment) Spin dispatches concurrently across instances. Comparing Figures~\ref{fig:throughput_limited} and~\ref{fig:throughput_unlimited} quantifies how the Wasm throughput compares to Docker's goroutine/async concurrency models under each resource budget.
 
 \section{Memory and CPU Footprint}
 \label{sec:eval_resources}
 
-\textit{Measurements pending cluster execution.}
+Methodology: Prometheus \texttt{container\_memory\_rss} metric collected at idle (pod running 60\,s with no requests) and peak (maximum during k6 load window). \acs{CPU} reported as average millicores during the k6 hold phase.
 
-Methodology: Prometheus \texttt{container\_memory\_rss} metric collected at idle (pod running 60\,s with no requests) and peak (maximum during k6 load window). \acs{CPU} reported as average millicores during the k6 hold phase. Results saved to \texttt{results/01-prime-sieve/resource\_metrics.json}.
+\begin{figure}[htbp]
+    \centering
+    \subfloat[Prime sieve (CPU-bound).]{%
+        \includegraphics[width=0.49\textwidth]{figures/01-prime-sieve/limited/memory.png}%
+        \label{fig:memory_ps_lim}}
+    \hfill
+    \subfloat[Memory bandwidth (alloc + SHA-256).]{%
+        \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/memory.png}%
+        \label{fig:memory_mb_lim}}
+    \caption{Container \acs{RSS} memory footprint per variant (idle vs.\ peak under load) in limited mode.}
+    \label{fig:memory_limited}
+\end{figure}
 
-\subsection{Expected Memory Profile}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/01-prime-sieve/limited/cpu.png}
+    \caption{\acs{CPU} consumption (average millicores during the k6 hold phase) per variant for the prime-sieve workload. The memory-bandwidth experiment does not emit a dedicated \acs{CPU} chart because its runtime cost is dominated by the SHA-256 hash stage and is reported indirectly through the latency curves in Figure~\ref{fig:latency_limited}.}
+    \label{fig:cpu_ps_lim}
+\end{figure}
+
+\subsection{Observed Memory Profile}
+
+Figure~\ref{fig:memory_limited} reports per-variant \acs{RSS} at idle and at peak load for both benchmarks, and Figure~\ref{fig:cpu_ps_lim} reports the corresponding \acs{CPU} consumption for the prime-sieve workload. The structural factors expected to drive the observed differences are:
 
 \begin{itemize}
     \item Spin \acs{RSS} includes Wasmtime's \acs{JIT} compilation context and \acs{Wasm} linear memory region.
     \item With \texttt{max\_instances=1}, the Spin variants process one request at a time; under higher concurrency they will scale instance count (creating additional \acs{Wasm} module contexts), which may increase peak \acs{RSS} proportionally.
-    \item docker-rust \acs{RSS} is expected to remain lowest (2--3\,MB), as it has no garbage collector and minimal Tokio runtime footprint.
+    \item docker-rust \acs{RSS} is expected to remain lowest, as it has no garbage collector and minimal Tokio runtime footprint.
 \end{itemize}
 
 \section{Developer Experience}
