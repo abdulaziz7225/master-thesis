@@ -5,3 +5,13 @@
 \usetikzlibrary{matrix, positioning, arrows.meta, fit, backgrounds, calc}
 % Scale wide tables down to fit textwidth (scales only when content exceeds \linewidth)
 \usepackage{adjustbox}
+
+% Render \cite{a,b,c} as [1, 2, 3] (single bracket pair) rather than IEEE's
+% default [1], [2], [3]. Wraps the whole iteration in one \mkbibbrackets and
+% separates entries with a comma + space.
+\DeclareCiteCommand{\cite}[\mkbibbrackets]
+  {\usebibmacro{prenote}}
+  {\usebibmacro{citeindex}%
+   \printtext[bibhyperref]{\printfield{labelnumber}}}
+  {\addcomma\space}
+  {\usebibmacro{postnote}}

@@ -19,7 +19,7 @@ An important design choice is that this study does \textit{not} attempt to isola
 
 \subsection{Docker/Golang: The Industry Baseline}
 
-The Docker/Golang variant serves as the primary baseline against which all other variants are measured. Go is the dominant language for cloud-native infrastructure tooling: \acs{K8s}, Docker, Terraform, Prometheus, and Grafana are all implemented in Go. Its goroutine-based concurrency model and the \texttt{net/http} standard library make it the idiomatic choice for \acs{HTTP} microservices. Go also represents the fastest garbage-collected language available at production scale, making it a strong baseline for evaluating whether \acs{Wasm}'s elimination of garbage collection overhead provides a meaningful performance advantage.
+The Docker/Golang variant serves as the primary baseline against which all other variants are measured. Go is the de facto language for cloud-native infrastructure tooling: \acs{K8s}~\cite{burns2016borg}, Docker~\cite{merkel2014docker}, Terraform~\cite{terraform2024hashicorp}, Prometheus~\cite{prometheus2024cncf}, and Grafana are all implemented in Go. Its goroutine-based concurrency model and the \texttt{net/http} standard library make it the idiomatic choice for \acs{HTTP} microservices. Among production-grade garbage-collected languages, Go offers competitive raw throughput while retaining ergonomic memory safety, making it a strong baseline for evaluating whether \acs{Wasm}'s elimination of bundled garbage collection overhead provides a meaningful performance advantage.
 
 \subsection{Docker/Rust: The Deconfounding Baseline}
 
@@ -37,7 +37,7 @@ The wasm-rust variant uses \texttt{cargo component build --release} (via \texttt
 
 TinyGo~\cite{tinygo2024} is a Go-compatible compiler optimised for embedded systems and \acs{Wasm} targets. It was selected to enable a partial Go-to-Go comparison with the docker-golang baseline, testing whether the concurrency model difference between Docker's goroutine scheduler and \acs{Wasm}'s request-handler model produces measurable performance differences when the language is held constant.
 
-Standard Go supports \texttt{GOOS=wasip1} since Go~1.21~\cite{goblogwasi2024}, but produces significantly larger \acs{Wasm} binaries because it bundles the full Go runtime (scheduler, garbage collector, and \acs{POSIX} abstraction layer). TinyGo is designed specifically for \acs{Wasm}/embedded targets and produces substantially smaller binaries by using a stripped-down runtime. TinyGo~0.40.1 targeting \texttt{wasip1} was pinned for this experiment.
+Standard Go supports \texttt{GOOS=wasip1} since Go~1.21~\cite{goblogwasi2024}, but produces significantly larger \acs{Wasm} binaries because it bundles the full Go runtime (scheduler, garbage collector, and \acs{POSIX} abstraction layer). TinyGo is designed specifically for \acs{Wasm}/embedded targets and produces substantially smaller binaries by using a stripped-down runtime. TinyGo~0.40.0 targeting \texttt{wasip1} was pinned for this experiment.
 
 The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). The handler function receives standard \texttt{net/http.ResponseWriter} and \texttt{*http.Request} arguments---identical to the docker-golang handler. \textbf{No custom socket code is required.} TinyGo's \texttt{-target=wasip2} flag cannot be used here: it hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK} uses a \acs{CGo} layer to export \texttt{fermyon:spin/inbound-http}, which Spin/Wasmtime accepts as a valid \acs{HTTP} trigger interface. The \texttt{-target=wasip1} flag is therefore required.
 
@@ -78,10 +78,10 @@ Table~\ref{tab:variant_summary} summarizes the four primary implementation varia
         \hline
         \textbf{Variant} & \textbf{Language} & \textbf{Runtime} & \textbf{Framework} & \textbf{I/O Model} & \textbf{NodePort} \\
         \hline
-        docker-golang & Go~1.26       & runc          & \texttt{net/http}           & Goroutines (M:N)          & 30084 \\
-        docker-rust   & Rust~1.94     & runc          & axum + Tokio                & Async (multi-thread)      & 30083 \\
         wasm-rust     & Rust~1.94     & Wasmtime/Cranelift & \texttt{spin-sdk} \texttt{\#[http\_component]} & WASI P2 handler  & 30081 \\
-        wasm-tinygo   & TinyGo~0.40.1 & Wasmtime/Cranelift & \texttt{spinhttp.Handle()}  & WASI P2 handler           & 30082 \\
+        wasm-tinygo   & TinyGo~0.40.0 & Wasmtime/Cranelift & \texttt{spinhttp.Handle()}  & WASI P2 handler           & 30082 \\
+        docker-rust   & Rust~1.94     & runc          & axum + Tokio                & Async (multi-thread)      & 30083 \\
+        docker-golang & Go~1.26       & runc          & \texttt{net/http}           & Goroutines (M:N)          & 30084 \\
         \hline
     \end{tabular}}
 \end{table}

@@ -38,7 +38,7 @@ The key components in this chain are:
 \begin{itemize}
     \item \textbf{containerd-shim-spin-v2~v0.17.0:} A containerd shim that implements the containerd shim v2 protocol and embeds Fermyon Spin (which embeds Wasmtime/Cranelift) internally. It does \textit{not} use crun or runc; the shim is the direct process host for the \acs{Wasm} component. Installed from the SpinKube GitHub release as a static binary at \texttt{/usr/local/bin/containerd-shim-spin-v2}.
     \item \textbf{containerd plugin entry:} The containerd configuration registers a \texttt{spin} runtime plugin with \texttt{runtime\_type = 'io.containerd.spin.v2'}. This is always active; no pod annotations are required.
-    \item \textbf{SpinOperator (v0.4.0):} A Kubernetes operator (CNCF Sandbox) that watches \texttt{SpinApp} \acs{CRD} resources and creates managed \texttt{Deployments} with \texttt{runtimeClassName: wasmtime-spin}. cert-manager~v1.16.3 is a prerequisite for the operator's admission webhook.
+    \item \textbf{SpinOperator (v0.6.1):} A Kubernetes operator (CNCF Sandbox) that watches \texttt{SpinApp} \acs{CRD} resources and creates managed \texttt{Deployments} with \texttt{runtimeClassName: wasmtime-spin}. cert-manager~v1.16.3 is a prerequisite for the operator's admission webhook.
     \item \textbf{Wasmtime/Cranelift:} The \acs{JIT} engine embedded inside Spin. All \acs{WASI}~P2 component execution uses Wasmtime with the Cranelift \acs{JIT} backend.
 \end{itemize}
 
