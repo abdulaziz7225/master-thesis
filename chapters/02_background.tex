@@ -263,7 +263,7 @@ Several higher-level operators have been developed to simplify the operational e
 
 \textbf{KWasm} is a \acs{K8s} operator that automates the installation of \acs{Wasm} runtime shims on cluster nodes via a DaemonSet, replacing the manual cloud-init bootstrap approach. KWasm is a meta-tool (shim installer), not a runtime; it was not used in this thesis.
 
-For the primary \acs{WASI}~P2 variants (wasm-rust, wasm-tinygo), the \texttt{SpinApp} \acs{CRD} (managed by the SpinOperator) is used, as it is the canonical deployment mechanism for SpinKube applications.
+For the primary SpinKube variants (wasm-rust on \acs{WASI}~P2, wasm-tinygo on \acs{WASI}~P1 via the Spin Go \acs{SDK}'s \acs{CGo} bridge), the \texttt{SpinApp} \acs{CRD} (managed by the SpinOperator) is used, as it is the canonical deployment mechanism for SpinKube applications.
 
 \subsubsection{RuntimeClass: The Bridge Between Paradigms}
 
@@ -272,7 +272,7 @@ The \acs{K8s} \texttt{RuntimeClass} \acs{API} is the key mechanism that enables 
 This thesis registers the following \texttt{RuntimeClass} objects:
 
 \begin{itemize}
-  \item \texttt{wasmtime-spin} --- maps to \texttt{containerd-shim-spin-v2}~v0.17.0 (SpinKube), which embeds Spin and Wasmtime/Cranelift. Used by the \acs{WASI}~P2 primary variants (\texttt{spin/rust}, \texttt{spin/tinygo}) via \texttt{SpinApp} \acs{CRD} resources managed by the SpinOperator. This is the \acs{Wasm} \texttt{RuntimeClass} used in this thesis.
+  \item \texttt{wasmtime-spin} --- maps to \texttt{containerd-shim-spin-v2}~v0.17.0 (SpinKube), which embeds Spin and Wasmtime/Cranelift. Used by the primary SpinKube variants --- \texttt{spin/rust} (\acs{WASI}~P2 component) and \texttt{spin/tinygo} (\acs{WASI}~P1 via the Spin Go \acs{SDK}'s \acs{CGo} bridge) --- via \texttt{SpinApp} \acs{CRD} resources managed by the SpinOperator. This is the \acs{Wasm} \texttt{RuntimeClass} used in this thesis.
 \end{itemize}
 
 \noindent The complete \acs{K8s} configuration for all four primary variants is detailed in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.

@@ -23,10 +23,10 @@ There is a critical need to empirically quantify the holistic trade-offs of thes
 \section{Research Questions}
 To address the problem statement, this thesis investigates the following primary research questions:
 \begin{itemize}
-    \item \textbf{RQ1:} How does the memory footprint and image size of the emerging \acs{Wasm} stack compare to a traditional Docker baseline in a \acs{K8s} environment?
-    \item \textbf{RQ2:} To what extent do \acs{Wasm} runtimes improve cold and warm startup latencies compared to standard \acs{OCI} container runtimes executing garbage-collected binaries?
-    \item \textbf{RQ3:} What are the runtime performance trade-offs---specifically regarding request throughput and execution latency---introduced by \acs{WASI}~P1's single-threaded \acs{HTTP} server constraints compared to Docker-based concurrency models?
-    \item \textbf{RQ4:} How do current \acs{WASI}~P1 ecosystem maturity, toolchain availability across supported languages, library compatibility constraints, and \acs{K8s} integration complexity impact developer experience and operational overhead when migrating from a mature containerized workflow?
+    \item \textbf{RQ1:} How does the memory footprint and \acs{OCI} artifact size of the SpinKube/Wasmtime \acs{Wasm} stack compare to a Docker/\texttt{runc} baseline in a single-node \acs{K8s} cluster?
+    \item \textbf{RQ2:} To what extent do \acs{Wasm} runtimes improve cold- and warm-start latency compared to \acs{OCI} containers executed under \texttt{runc}, across both garbage-collected (Go) and ahead-of-time-compiled (Rust) baselines?
+    \item \textbf{RQ3:} What are the runtime performance trade-offs---specifically request throughput and end-to-end latency---introduced by SpinKube's \acs{WASI}~P2 single-component dispatch model (one request per Wasmtime instance at a time) compared to Docker/\texttt{runc}-based concurrency models?
+    \item \textbf{RQ4:} How do the current \acs{Wasm}-on-Kubernetes ecosystem (SpinKube, the \acs{WASI}~Preview~1 / Preview~2 toolchains, library compatibility) and operational integration impact developer experience compared to a mature Docker/\acs{K8s} workflow?
 \end{itemize}
 
 \section{Research Methodology}
