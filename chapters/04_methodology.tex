@@ -23,7 +23,7 @@ The Docker/Golang variant serves as the primary baseline against which all other
 
 \subsection{Docker/Rust: The Deconfounding Baseline}
 
-A second Docker-based baseline using Rust is included specifically to enable a language-controlled comparison. Because both docker-rust and wasm-rust use the same language, the performance delta between these two variants isolates (approximately) the overhead introduced by the SpinKube/Wasmtime runtime, \acs{SFI} bounds-checking, and the \texttt{max\_instances~=~1} single-instance dispatch constraint, independent of language-level differences such as memory management strategy.
+A second Docker-based baseline using Rust is included specifically to enable a language-controlled comparison. Because both docker-rust and wasm-rust use the same language, the performance delta between these two variants isolates (approximately) the overhead introduced by the SpinKube/Wasmtime runtime, \acs{SFI} bounds-checking, and the single-instance dispatch constraint imposed by the \texttt{SpinApp~spec.replicas:~1} limited-mode baseline (each \acs{WASI} P1/P2 component is architecturally single-threaded), independent of language-level differences such as memory management strategy.
 
 Rust's axum/Tokio async stack provides full multi-threaded, asynchronous I/O---the maximum performance achievable on the Docker/\texttt{runc} path---making the docker-rust variant also a useful upper-bound reference for the \acs{Wasm} variants.
 
@@ -78,7 +78,7 @@ Table~\ref{tab:variant_summary} summarizes the four primary implementation varia
         \hline
         \textbf{Variant} & \textbf{Language} & \textbf{Runtime} & \textbf{Framework} & \textbf{I/O Model} & \textbf{NodePort} \\
         \hline
-        wasm-rust     & Rust~1.94     & Wasmtime/Cranelift & \texttt{spin-sdk} \texttt{\#[http\_component]} & WASI P2 handler  & 30081 \\
+        wasm-rust     & Rust~1.94     & Wasmtime/Cranelift & \texttt{spin-sdk} \texttt{\#[http\_component]} & \acs{WASI}~P2 handler  & 30081 \\
         wasm-tinygo   & TinyGo~0.40.0 & Wasmtime/Cranelift & \texttt{spinhttp.Handle()}  & Spin HTTP (\acs{WASI}~P1 via CGo) & 30082 \\
         docker-rust   & Rust~1.94     & runc          & axum + Tokio                & Async (multi-thread)      & 30083 \\
         docker-golang & Go~1.26       & runc          & \texttt{net/http}           & Goroutines (M:N)          & 30084 \\

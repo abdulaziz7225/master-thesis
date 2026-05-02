@@ -111,7 +111,7 @@ There is no \acs{TCP} socket management, no accept loop, and no custom \acs{HTTP
 
 The component is built with \texttt{cargo component build --release} (from the \texttt{cargo-component} toolchain), which compiles to a \acs{WASI}~P2 component and runs \texttt{wasm-tools component link} to produce a self-contained \texttt{.wasm} file. The artifact is pushed to the registry as a Spin \acs{OCI} artifact---not a standard Docker image---using \texttt{spin registry push docker.io/abdulaziz7225/prime-sieve-wasm-rust:latest}. Spin \acs{OCI} artifacts use distinct media types (\texttt{application/vnd.fermyon.spin.manifest.v2+json}) that require \texttt{containerd-shim-spin-v2} to pull and execute correctly.
 
-The \texttt{spin.toml} configures \texttt{max\_instances~=~1} to cap concurrent Spin instances (resource fairness requirement). The compiled \texttt{.wasm} artifact is typically under 1\,MB stripped.
+Concurrency is capped at the pod level: the limited-mode baseline runs the \texttt{SpinApp} with \texttt{spec.replicas:~1}, and each \acs{WASI}~P1/P2 component is architecturally single-threaded per Wasmtime instance, satisfying the resource-fairness requirement without any in-component setting. (Spin~2.x [\texttt{spin\_manifest\_version~=~2}] no longer accepts the legacy \texttt{max\_instances} field that earlier Spin 1.x versions exposed in \texttt{spin.toml}.) The compiled \texttt{.wasm} artifact is typically under 1\,MB stripped.
 
 Source: \texttt{wasm/rust/01-prime-sieve/}
 
@@ -142,7 +142,7 @@ The binary is compiled with:
 \begin{verbatim}
 tinygo build -target=wasip1 -gc=conservative -opt=2 -o app.wasm .
 \end{verbatim}
-The \texttt{-gc=conservative} flag is retained for stability. \texttt{-target=wasip1} is required: TinyGo's \texttt{wasip2} target hardwires \texttt{wasi:cli/command} and cannot export \texttt{wasi:http/incoming-handler}; the Spin Go \acs{SDK} exports \texttt{fermyon:spin/inbound-http} via its \acs{CGo} layer, which Spin accepts as an equivalent interface. The \texttt{.wasm} artifact is packaged as a Spin \acs{OCI} artifact using \texttt{spin registry push}. The \texttt{spin.toml} sets \texttt{max\_instances~=~1} (resource fairness).
+The \texttt{-gc=conservative} flag is retained for stability. \texttt{-target=wasip1} is required: TinyGo's \texttt{wasip2} target hardwires \texttt{wasi:cli/command} and cannot export \texttt{wasi:http/incoming-handler}; the Spin Go \acs{SDK} exports \texttt{fermyon:spin/inbound-http} via its \acs{CGo} layer, which Spin accepts as an equivalent interface. The \texttt{.wasm} artifact is packaged as a Spin \acs{OCI} artifact using \texttt{spin registry push}. The limited-mode baseline runs the \texttt{SpinApp} with \texttt{spec.replicas:~1}; the \acs{WASI}~P1 component itself is single-threaded per Wasmtime instance, so no additional \texttt{spin.toml} concurrency setting is required (resource fairness).
 
 Source: \texttt{wasm/tinygo/01-prime-sieve/}
 
@@ -153,9 +153,9 @@ All four primary variants are deployed into the \texttt{prime-sieve} namespace. 
 
 \textbf{Docker variants} use standard \texttt{Deployment} manifests with no \texttt{runtimeClassName}; containerd routes these pods through the default \texttt{runc} path.
 
-\textbf{Spin variants} are deployed via the \texttt{SpinApp} \acs{CRD}. The SpinOperator reads the \texttt{SpinApp} resource, creates a managed \texttt{Deployment}, and applies \texttt{runtimeClassName: wasmtime-spin} to its pods---routing them through \texttt{containerd-shim-spin-v2}, which embeds Spin and Wasmtime/Cranelift. Spin images must be pushed via \texttt{spin registry push} (not \texttt{docker push}), as the shim expects Spin-specific \acs{OCI} media types (\texttt{application/vnd.fermyon.spin.manifest.v2+json}). The \texttt{max\_instances~=~1} setting in \texttt{spin.toml} caps concurrent \acs{Wasm} instances. Scaling must be done via \texttt{kubectl patch spinapp} rather than \texttt{kubectl scale deployment}: the SpinOperator reconciles direct Deployment scaling back to the \texttt{SpinApp}'s \texttt{spec.replicas}.
+\textbf{Spin variants} are deployed via the \texttt{SpinApp} \acs{CRD}. The SpinOperator reads the \texttt{SpinApp} resource, creates a managed \texttt{Deployment}, and applies \texttt{runtimeClassName: wasmtime-spin} to its pods---routing them through \texttt{containerd-shim-spin-v2}, which embeds Spin and Wasmtime/Cranelift. Spin images must be pushed via \texttt{spin registry push} (not \texttt{docker push}), as the shim expects Spin-specific \acs{OCI} media types (\texttt{application/vnd.fermyon.spin.manifest.v2+json}). Concurrency in the limited mode is capped by running the SpinApp with \texttt{spec.replicas:~1}; each \acs{WASI}~P1/P2 component is architecturally single-threaded per instance. Scaling must be done via \texttt{kubectl patch spinapp} rather than \texttt{kubectl scale deployment}: the SpinOperator reconciles direct Deployment scaling back to the \texttt{SpinApp}'s \texttt{spec.replicas}.
 
-\textbf{Resource fairness (supervisor requirement).} All four variants specify identical resource envelopes: \texttt{requests} of 250m \acs{CPU} and 64\,MiB memory, \texttt{limits} of 500m \acs{CPU} and 128\,MiB memory. To ensure a fair single-thread comparison, \texttt{GOMAXPROCS=1} is set in the \texttt{docker-golang} manifest, \texttt{TOKIO\_WORKER\_THREADS=1} is set in the \texttt{docker-rust} manifest, and \texttt{max\_instances~=~1} in \texttt{spin.toml} restricts each Spin variant to one concurrent instance.
+\textbf{Resource fairness (supervisor requirement).} All four variants specify identical resource envelopes: \texttt{requests} of 250m \acs{CPU} and 64\,MiB memory, and \texttt{limits.memory} of 128\,MiB. The \texttt{limits.cpu} value is mode-dependent: 500m for the limited-mode comparison and 4000m for the unlimited-mode scaling experiment, raised so that cgroup CPU bandwidth control does not throttle the additional worker threads introduced in unlimited mode (see Section~\ref{sec:eval_performance}). To ensure a fair single-thread limited-mode comparison, \texttt{GOMAXPROCS=1} is set in the \texttt{docker-golang} manifest, \texttt{TOKIO\_WORKER\_THREADS=1} is set in the \texttt{docker-rust} manifest, and the Spin variants run with \texttt{SpinApp~spec.replicas:~1} so that each variant serves one request at a time.
 
 Liveness and readiness probes execute \texttt{GET /health}. Docker variants use a 5-second initial delay; Spin variants rely on the SpinOperator's rollout health management via the \texttt{SpinApp} ready condition.
 
@@ -169,7 +169,7 @@ Table~\ref{tab:nodePorts} shows the NodePort assignments used for direct benchma
         \hline
         \textbf{Variant} & \textbf{NodePort} & \textbf{Container Port} & \textbf{Runtime} \\
         \hline
-        wasm-rust     & 30081 & 80   & Wasmtime/Cranelift / WASI P2 \\
+        wasm-rust     & 30081 & 80   & Wasmtime/Cranelift / \acs{WASI}~P2 \\
         wasm-tinygo   & 30082 & 80   & Wasmtime/Cranelift / \acs{WASI}~P1 \\
         docker-rust   & 30083 & 8080 & runc (native) \\
         docker-golang & 30084 & 8080 & runc (native) \\
