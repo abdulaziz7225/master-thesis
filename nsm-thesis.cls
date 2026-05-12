@@ -500,6 +500,7 @@
 \newcommand{\birthplace}[1]{\gdef\thebirthplace{#1}}
 \newcommand{\advisors}[1]{\gdef\theadvisors{#1}}
 \newcommand{\referees}[1]{\gdef\thereferees{#1}}
+\newcommand{\supervisingprofessor}[1]{\gdef\thesupervisingprofessor{#1}}
 % -----------------------------------------------------------------------------
 
 
@@ -884,6 +885,21 @@
                     \fi%
                     \n%
                 }%
+
+                \ifdef{\thesupervisingprofessor}{%
+                \par
+                \vspace{0.27cm}
+                \fontfamily{\opensansfamily}\fontseries{l}\fontshape{n}\selectfont\@nsmgroupcoverpage@verysometextsize%
+                \ifthenelse{\boolean{germanthesis}}{%
+                    Hauptbetreuender Hochschullehrer
+                }{%
+                    Supervising professor
+                }%
+
+                \vspace{0.15cm}
+                \fontfamily{\opensansfamily}\fontseries{m}\fontshape{n}\selectfont\@nsmgroupcoverpage@verymidtextsize%
+                \thesupervisingprofessor%
+                }{}%
             }
         \end{minipage}
     };
