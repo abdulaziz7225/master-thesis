@@ -10,11 +10,11 @@ The thesis compares a SpinKube / Wasmtime stack (WASI P2) against a Docker / run
 
 ## Companion repositories
 
-| Repository | Purpose |
-| --- | --- |
-| [thesis-infra-setup](https://github.com/abdulaziz7225/thesis-infra-setup) | Infrastructure-as-code for the experimental Kubernetes cluster used in the thesis. |
-| [thesis-experiments](https://github.com/abdulaziz7225/thesis-experiments) | Benchmark implementations, load-test runners, and result data for the thesis. |
-| **[master-thesis](https://github.com/abdulaziz7225/master-thesis)** (this repo) | The LaTeX source, figures, bibliography, and build files of the written thesis. |
+| Repository                                                                      | Purpose                                                                            |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [thesis-infra-setup](https://github.com/abdulaziz7225/thesis-infra-setup)       | Infrastructure-as-code for the experimental Kubernetes cluster used in the thesis. |
+| [thesis-experiments](https://github.com/abdulaziz7225/thesis-experiments)       | Benchmark implementations, load-test runners, and result data for the thesis.      |
+| **[master-thesis](https://github.com/abdulaziz7225/master-thesis)** (this repo) | The LaTeX source, figures, bibliography, and build files of the written thesis.    |
 
 ## Repository layout
 
