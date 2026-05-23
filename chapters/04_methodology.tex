@@ -1,7 +1,7 @@
 \chapter{Research Methodology}
 \label{chap:methodology}
 
-This chapter describes the research strategy employed to compare \acs{Wasm} and Docker-based microservice deployments, justifies the selection of the four implementation variants, defines the benchmark workloads, and specifies the five measurement metrics used throughout the evaluation.
+This chapter describes the research strategy employed to compare \acs{Wasm} and Docker-based microservice deployments, justifies the selection of the four implementation variants, defines the four benchmark workloads, and specifies the six measurement metrics used throughout the evaluation.
 
 \section{Research Strategy}
 \label{sec:research_strategy}
@@ -106,6 +106,46 @@ The response is a \acs{JSON} object:
 
 The \texttt{no\_hash=1} parameter suppresses the hash computation (returning an empty string), enabling measurement of raw allocation overhead independently of hashing time. Default \texttt{size\_kb=64}; maximum \texttt{size\_kb=10240}. The benchmark uses \texttt{size\_kb=64} for load testing and \texttt{size\_kb=1024} for stress testing large-allocation behaviour.
 
+\subsection{HTTP Fan-out Benchmark (I/O-Bound)}
+\label{sec:http_fanout_workload}
+
+The third benchmark workload is the \textit{I/O-bound} counterpart promised in the task description. Each variant exposes an \acs{HTTP} service that, on every inbound request, dispatches $N$ concurrent outbound \acs{HTTP} GETs to an in-cluster delay-injecting backend pod (\texttt{io-echo}) and aggregates the responses. The backend sleeps for \texttt{delay\_ms} before responding, so per-request latency is dominated by outbound I/O wait rather than \acs{CPU} work --- the workload is I/O-bound by construction. The \texttt{io-echo} pod is intentionally \textit{not} part of the comparison matrix; it is a stable I/O target whose response delay and payload size are tunable parameters, turning variation in the inbound-side measurements into a runtime-and-language signal rather than backend noise.
+
+The \acs{HTTP} \acs{API} contract is identical across all four variants:
+
+\begin{verbatim}
+GET /fanout?n=N&delay_ms=D&no_list=0|1
+\end{verbatim}
+
+The response is a \acs{JSON} object:
+\begin{verbatim}
+{"runtime":"<variant>","n":N,"delay_ms":D,
+ "ok_count":K,"err_count":E,"elapsed_us":T,"responses":[...]}
+\end{verbatim}
+
+Defaults: \texttt{n=5}, \texttt{delay\_ms=50}, \texttt{no\_list=1} during load tests (the \texttt{responses} array is omitted to eliminate response-serialization overhead as a confounding variable). The \texttt{elapsed\_us} field measures wall-clock time from the first outbound dispatch through the last response, excluding inbound \acs{HTTP} framing.
+
+\textit{Concurrency model per variant.} The wasm-rust variant fans out concurrently via \texttt{spin\_sdk::http::send} composed with \texttt{futures::future::join\_all}; docker-rust uses \texttt{reqwest::Client} with the same \texttt{join\_all} pattern; docker-golang uses \texttt{net/http} with \texttt{sync.WaitGroup} over goroutines. The wasm-tinygo variant, however, dispatches the $N$ outbound \acs{HTTP} GETs \textit{sequentially}: TinyGo's wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()} (nil-pointer dereference in the goroutine scheduler), and \texttt{spinhttp.Send} itself is blocking per call. This asymmetry --- three variants can fan out concurrently but the fourth cannot under WASI~P1 --- is itself a thesis-relevant observation about the maturity of the Wasm side for I/O-heavy workloads (see Section~\ref{sec:discussion_fanout}).
+
+The Spin variants gate outbound \acs{HTTP} via \texttt{allowed\_outbound\_hosts~=~[\textquotedbl http://io-echo.http-fanout.svc.cluster.local:80\textquotedbl ]} in \texttt{spin.toml}, reflecting Spin's idiomatic deny-by-default capability model. The same gating is unavailable on the Docker side, which is itself a security-posture qualitative observation (Chapter~\ref{chap:discussion}).
+
+\subsection{JSON Round-trip Benchmark (Serialization + Allocator)}
+\label{sec:json_roundtrip_workload}
+
+The fourth benchmark workload stresses the \textit{serialization and allocator hot path} that none of the previous three workloads exercise. Each variant exposes an \acs{HTTP} service that accepts a posted \acs{JSON} integer array, parses it, sorts it descending, computes aggregate statistics (count, sum, min, max, mean, median, standard deviation), and returns the aggregates as \acs{JSON}.
+
+The \acs{HTTP} \acs{API} contract is identical across all four variants:
+
+\begin{verbatim}
+POST /jsontx?n=N&no_list=0|1
+Content-Type: application/json
+Body: [a, b, c, ...]  (array of N integers)
+\end{verbatim}
+
+The response is a \acs{JSON} object containing \texttt{runtime}, \texttt{n}, \texttt{count}, \texttt{sum}, \texttt{min}, \texttt{max}, \texttt{mean}, \texttt{median}, \texttt{stdev}, \texttt{elapsed\_us}, and optionally the \texttt{sorted} array (suppressed when \texttt{no\_list=1}). The median is defined identically across all four variants as $\mathrm{arr}[\lfloor(n-1)/2\rfloor]$ after a descending sort (mid-low for even~$N$) so that the four variants produce bit-identical numeric outputs --- without this constraint the four standard-library implementations would diverge.
+
+Unlike the prior three benchmarks, the 04~load profile uses a \textit{request-body-size sweep}: $N$ is varied across $\{100, 1000, 10\,000, 100\,000\}$ in a single experiment, with one k6 invocation per $(\text{variant}, N)$ cell. This sweep exposes three runtime axes simultaneously: the per-byte cost of the host-to-guest \acs{HTTP}-body copy across the \acs{WASI}~P2 boundary (a Wasm-specific cost that grows with body size), the allocator's behaviour under churn from many small irregular \acs{JSON} objects, and the serializer/deserializer hot path itself (\texttt{serde\_json} in Rust, \texttt{encoding/json} in Go and TinyGo). The result is a per-variant throughput-vs-$N$ curve (the \texttt{n\_sweep.png} panel) rather than the single bar produced by the other three benchmarks.
+
 \subsection{Planned Future Workloads}
 
 \begin{itemize}
@@ -115,7 +155,7 @@ The \texttt{no\_hash=1} parameter suppresses the hash computation (returning an 
 \section{Definition of Metrics}
 \label{sec:metrics}
 
-Five metrics are measured across all variants. The first four are quantitative; the fifth is qualitative.
+Six metrics are measured across all variants. The first five are quantitative; the sixth is qualitative.
 
 \begin{enumerate}
     \item \textbf{Startup Latency (Cold and Warm Start).} Time elapsed from \texttt{kubectl scale --replicas=0} followed by \texttt{kubectl scale --replicas=1} until the service returns the first \acs{HTTP}~200 response, measured by a polling script. This elapsed time includes the period required for the previous pod instance to terminate, plus any \acs{OCI} image pull time (for cold starts), plus runtime initialisation. Six measurement runs are performed per variant. Run~1 constitutes the \textit{cold start}: the node has no cached image layer, so the \acs{OCI} image is pulled from the registry before the pod can start; only the single observed value is reported for cold start. Runs~2--6 constitute \textit{warm starts}: the image is already cached on the node, so pod startup reflects only container/\acs{Wasm} runtime initialisation time; mean, median, and standard deviation are computed across these five warm-start runs. All latency values are expressed in milliseconds.
@@ -123,6 +163,8 @@ Five metrics are measured across all variants. The first four are quantitative; 
     \item \textbf{Memory Footprint.} \acl{RSS} (\acs{RSS}) is the portion of a process's memory held in physical \acs{RAM} at a given point in time; it excludes memory swapped to disk and memory-mapped files that are not currently resident, making it the most practical measure of the \acs{RAM} a running service occupies on a production node. \acs{RSS} is reported by Prometheus~\cite{prometheus2024cncf} via the \texttt{container\_memory\_rss} metric, collected at two operating points: \textit{idle} (pod running for 60\,s with no incoming requests) and \textit{peak} (maximum \acs{RSS} observed during the k6 load test window). Scrape interval: 5\,s. Units: megabytes.
 
     \item \textbf{OCI Artifact Size.} The on-disk size of the \acs{OCI} image as reported by \texttt{docker~inspect}. This metric directly impacts image pull latency, registry storage costs, and cold-start time when images are not cached. Units: megabytes.
+
+    \item \textbf{Binary Artefact Size.} The on-disk size of the raw compiled code alone, isolated from the \acs{OCI} container packaging. For the Spin variants this is the \texttt{.wasm} file pushed via \texttt{spin~registry~push}; for the Docker variants this is the stripped, statically-linked binary extracted from the scratch image via \texttt{docker~cp}. Distinct from the \acs{OCI} image size: a Docker scratch image is the binary plus \texttt{ca-certificates.crt} plus image-manifest metadata ($\sim$0.2--0.6\,\acs{MB} of overhead), and a Spin \acs{OCI} artefact is the \texttt{.wasm} plus a small Spin manifest layer. Reporting both metrics side by side makes the cross-runtime size comparison apples-to-apples: \texttt{binary\_size} answers ``how large is the compiled code?'' and \texttt{image\_size} answers ``how large is what gets stored in the registry?''. Units: megabytes.
 
     \item \textbf{Throughput and Latency Under Load.} Load testing is performed with k6~\cite{k6io2024grafana} using a ramping-\acs{VU} executor. k6 models load using \acpl{VU}: each \acs{VU} is an independent simulated client that continuously sends requests to the target service for the duration of its active phase, waiting for a response before issuing the next request; the ramp-up phase gradually increases concurrency to avoid an instantaneous spike that would distort latency measurements. The load profile ramps from 1~\acs{VU} linearly to 50~\acp{VU} over 20\,s, holds at 50~\acp{VU} for 60\,s, then ramps down to 0 over 10\,s. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: requests per second (\acs{RPS}), \acs{HTTP} request failure rate (fraction of non-2xx responses), p50/p95/p99 end-to-end latency, and the custom \texttt{server\_compute\_us} metric extracted from the \acs{JSON} response body to measure server-side algorithm time independently of network and queuing effects.
 
