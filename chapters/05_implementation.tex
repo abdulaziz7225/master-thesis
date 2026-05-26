@@ -146,6 +146,56 @@ The \texttt{-gc=conservative} flag is retained for stability. \texttt{-target=wa
 
 Source: \texttt{wasm/tinygo/01-prime-sieve/}
 
+\section{Memory-Bandwidth Workload Implementation}
+\label{sec:impl_membw}
+
+The second workload (Section~\ref{sec:memory_bandwidth_workload}) shares the same four-variant structure, build pipeline, and Spin packaging as the prime-sieve workload. Differences are confined to the handler body: in place of the sieve algorithm each handler allocates a heap buffer of \texttt{size\_kb~$\times$~1024} bytes, fills it with a deterministic byte pattern, optionally computes a \acs{SHA}-256 hash, and returns the hex digest with elapsed time. Hashing uses each platform's native crypto library (\texttt{sha2}~=~"0.10" with \texttt{hex}~=~"0.4" for the Rust variants; \texttt{crypto/sha256} from the standard library for the Go and TinyGo variants). The \acs{HTTP} dispatcher, the \texttt{SpinApp} \acs{CRD}, and the resource envelopes are identical to the prime-sieve namespace. Sources: \texttt{docker/rust/02-memory-bandwidth/}, \texttt{docker/golang/02-memory-bandwidth/}, \texttt{wasm/rust/02-memory-bandwidth/}, \texttt{wasm/tinygo/02-memory-bandwidth/}.
+
+\section{HTTP Fan-out Workload Implementation (I/O-Bound)}
+\label{sec:impl_http_fanout}
+
+The third workload (Section~\ref{sec:http_fanout_workload}) is the I/O-bound counterpart of 01/02 and is the first workload to require \textit{outbound} \acs{HTTP} from each variant. The four implementations differ along their concurrency primitives and Spin requires explicit outbound-host gating in \texttt{spin.toml}.
+
+\subsection{Per-variant outbound dispatch}
+
+The wasm-rust variant uses \texttt{spin\_sdk::http::send} composed with \texttt{futures::future::join\_all}; the docker-rust variant uses \texttt{reqwest::Client} with the same \texttt{join\_all} pattern over a tuned connection pool (\texttt{pool\_max\_idle\_per\_host~=~64}); the docker-golang variant uses \texttt{net/http} over a tuned \texttt{http.Transport} with \texttt{sync.WaitGroup} over goroutines. The wasm-tinygo variant dispatches sequentially via blocking \texttt{spinhttp.Send} calls because TinyGo's wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()} (nil-pointer dereference in the goroutine scheduler) --- the concurrent fan-out pattern that the other three variants share cannot be replicated on the \acs{WASI}~P1 + TinyGo cell today. The asymmetry is preserved in the experimental design rather than papered over because it itself is a thesis-relevant observation about the maturity of the Wasm side for I/O-heavy workloads (see Section~\ref{sec:discussion_fanout}).
+
+\subsection{Outbound capability gating in \texttt{spin.toml}}
+
+The two Spin variants restrict outbound \acs{HTTP} to a single backend host in \texttt{spin.toml}:
+
+\begin{verbatim}
+[component.http-fanout]
+allowed_outbound_hosts = [
+  "http://io-echo.http-fanout.svc.cluster.local:80"
+]
+\end{verbatim}
+
+This deny-by-default capability declaration is Spin's idiomatic security posture for outbound network access. The Docker variants have no equivalent gating mechanism: \texttt{reqwest} and \texttt{net/http} dial arbitrary hosts at runtime, subject only to the cluster's \texttt{NetworkPolicy} layer (which is not configured in this experiment). The Spin posture is therefore strictly more restrictive in the default configuration --- a qualitative security observation revisited in Chapter~\ref{chap:discussion}.
+
+\subsection{io-echo backend (the outbound HTTP target)}
+\label{sec:impl_io_echo}
+
+A small Go service named \texttt{io-echo} is deployed alongside the four fan-out variants in the \texttt{http-fanout} namespace. It exposes \texttt{GET /echo?delay\_ms=D\&size\_b=B}: sleeps for \texttt{delay\_ms} milliseconds and returns \texttt{size\_b} bytes of payload. The deployment runs a single replica, listens on a ClusterIP-only \texttt{Service} (\textit{no} \texttt{NodePort}), and is intentionally \textit{not} part of the comparison matrix. Holding the per-outbound delay and response size constant at the backend turns variation in the inbound-side throughput and latency measurements into a runtime-and-language signal rather than backend noise. Source: \texttt{backend/io-echo/}.
+
+\section{JSON Round-trip Workload Implementation}
+\label{sec:impl_json_roundtrip}
+
+The fourth workload (Section~\ref{sec:json_roundtrip_workload}) implements \texttt{POST /jsontx} across the same four-variant structure. Each handler reads the request body, parses it as an integer array via the platform's standard \acs{JSON} deserialiser (\texttt{serde\_json} for Rust; \texttt{encoding/json} for Go and TinyGo), sorts the array descending, computes aggregate statistics, and re-serialises the response. The median is defined identically across all four variants as $\mathrm{arr}[\lfloor(n-1)/2\rfloor]$ after the descending sort --- the only handwritten line in each implementation that must agree byte-for-byte across the four variants for the responses to be comparable. Sources: \texttt{docker/rust/04-json-roundtrip/}, \texttt{docker/golang/04-json-roundtrip/}, \texttt{wasm/rust/04-json-roundtrip/}, \texttt{wasm/tinygo/04-json-roundtrip/}.
+
+\section{Build Optimisation Across All Crates}
+\label{sec:impl_build_flags}
+
+The build artefacts for all four examples were tightened simultaneously after the initial experiment run, then the binary-size measurements (Chapter~\ref{chap:evaluation}) were re-collected. The three changes are uniform across the corresponding variant family:
+
+\begin{itemize}
+    \item \textbf{Rust} (all eight crates --- four Docker, four Spin): \texttt{panic = "abort"} added to \texttt{[profile.release]}, eliminating unwinding tables for a $\sim$5--10\,\% binary-size reduction with marginally faster code. The four Spin crates additionally gained \texttt{codegen-units = 1} so that \acs{LTO} can fully reason across the (small) crate; the four Docker crates already had this. \texttt{opt-level} remains at \texttt{3} for the Docker crates and \texttt{"s"} (size-tuned) for the Spin crates --- the Wasm side trades a small amount of peak compute for a smaller deployable artefact.
+    \item \textbf{Go} (all five Go binaries, including the \texttt{io-echo} backend): \texttt{-trimpath} added to \texttt{go build} for reproducible builds and smaller binaries (file-path strings are removed from the embedded debug info).
+    \item \textbf{TinyGo} (all four wasm-tinygo variants): \texttt{-no-debug} added to the \texttt{tinygo build} invocation, stripping \acs{DWARF} debug info from the \texttt{.wasm} output for a typical 10--20\,\% size reduction.
+\end{itemize}
+
+These flag refinements feed directly into the \textbf{binary artefact size} metric reported in Section~\ref{sec:eval_size} alongside the existing \acs{OCI} image size, so that the cross-runtime comparison is apples-to-apples on the raw compiled code rather than on the container packaging. The \texttt{binary\_size} measurements are extracted at the local Docker daemon via \texttt{docker~create} + \texttt{docker~cp} from a throwaway container (for the Docker variants) and from the local \texttt{.wasm} file (for the Spin variants), independent of the cluster.
+
 \section{Kubernetes Deployment Configuration}
 \label{sec:k8s_deployment}
 
