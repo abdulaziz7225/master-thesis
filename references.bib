@@ -148,7 +148,7 @@
   author = {{Fermyon Technologies}},
   title  = {WebAssembly Language Support Matrix},
   year   = {2024},
-  url    = {https://developer.fermyon.com/wasm-languages/webassembly-language-support},
+  url    = {https://techdocs.akamai.com/akamai-functions/docs/webassembly-language-support-matrix},
   urldate = {2026-03-23}
 }
 
@@ -188,7 +188,7 @@
   author  = {{Fermyon Technologies}},
   title   = {Fermyon Spin: The Developer Tool for Serverless {WebAssembly}},
   year    = {2024},
-  url     = {https://developer.fermyon.com/spin/v3/index},
+  url     = {https://spinframework.dev/v3/index},
   urldate = {2026-03-23}
 }
 
@@ -231,7 +231,6 @@
   url     = {https://www.hetzner.com/cloud/},
   urldate = {2026-03-23}
 }
-
 
 @online{tinygo2024,
   author  = {{TinyGo Authors}},
@@ -306,6 +305,24 @@
   year    = {2024},
   url     = {https://workers.cloudflare.com/},
   urldate = {2026-03-24}
+}
+
+@online{docker2024whatcontainer,
+  author  = {{Docker, Inc.}},
+  title   = {What is a Container?},
+  year    = {2024},
+  url     = {https://www.docker.com/resources/what-container/},
+  urldate = {2026-05-29},
+  note    = {Reference for the side-by-side comparison of virtual machines and containers}
+}
+
+@online{k8s2024architecture,
+  author  = {{The Kubernetes Authors}},
+  title   = {Cluster Architecture},
+  year    = {2024},
+  url     = {https://kubernetes.io/docs/concepts/architecture/},
+  urldate = {2026-05-29},
+  note    = {Reference for the Kubernetes control-plane, worker-node, and CRI architecture diagram}
 }
 
 @online{fastly2024compute,
@@ -385,11 +402,6 @@
   urldate      = {2026-05-18},
   organization = {GitHub}
 }
-
-% =====================================================================
-% Recent academic literature (added during literature-expansion pass)
-% Each entry below has been verified via publisher landing page or arXiv.
-% =====================================================================
 
 @article{zhang2024wasmsurvey,
   title     = {Research on {WebAssembly} Runtimes: A Survey},
@@ -539,4 +551,122 @@
   url          = {https://confidentialcontainers.org/},
   urldate      = {2026-05-25},
   organization = {Cloud Native Computing Foundation}
+}
+
+@techreport{nist2015fips180,
+  author      = {{National Institute of Standards and Technology}},
+  title       = {Secure Hash Standard ({SHS})},
+  number      = {FIPS PUB 180-4},
+  institution = {U.S. Department of Commerce},
+  year        = {2015},
+  month       = {August},
+  url         = {https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf},
+  urldate     = {2026-05-29}
+}
+
+@online{webassembly2024corespec,
+  author  = {{WebAssembly Community Group}},
+  editor  = {Rossberg, Andreas},
+  title   = {{WebAssembly} Core Specification},
+  year    = {2024},
+  url     = {https://webassembly.github.io/spec/core/},
+  urldate = {2026-05-29},
+  note    = {Release~3.0}
+}
+
+@online{linux2024conntrack,
+  author  = {{The Linux Kernel Documentation Authors}},
+  title   = {Netfilter Conntrack Sysfs Variables},
+  year    = {2024},
+  url     = {https://www.kernel.org/doc/html/latest/networking/nf_conntrack-sysctl.html},
+  urldate = {2026-05-29}
+}
+
+@online{bytecodealliance2024wamr,
+  author  = {{Bytecode Alliance}},
+  title   = {{WebAssembly} Micro Runtime ({WAMR})},
+  year    = {2024},
+  url     = {https://github.com/bytecodealliance/wasm-micro-runtime},
+  urldate = {2026-05-29}
+}
+
+@online{wazero2024,
+  author  = {{Tetrate Labs}},
+  title   = {wazero: The zero dependency {WebAssembly} runtime for {Go} developers},
+  year    = {2024},
+  url     = {https://wazero.io/},
+  urldate = {2026-05-29}
+}
+
+@online{wasmer2024,
+  author  = {{Wasmer, Inc.}},
+  title   = {{Wasmer}: The Universal {WebAssembly} Runtime},
+  year    = {2024},
+  url     = {https://wasmer.io/},
+  urldate = {2026-05-29}
+}
+
+@online{cncf2025spinkube,
+  author  = {{Cloud Native Computing Foundation}},
+  title   = {{SpinKube}: {CNCF} Sandbox Project Page},
+  year    = {2025},
+  url     = {https://www.cncf.io/projects/spinkube/},
+  urldate = {2026-05-29},
+  note    = {Accepted into the {CNCF} Sandbox on 21~January~2025}
+}
+
+@online{spinframework2024rust,
+  author  = {{The Spin Framework Authors}},
+  title   = {Building {Spin} components in {Rust}},
+  year    = {2024},
+  url     = {https://spinframework.dev/v3/rust-components},
+  urldate = {2026-05-29}
+}
+
+@online{spinframework2024go,
+  author  = {{The Spin Framework Authors}},
+  title   = {Building {Spin} components with {Go} ({TinyGo})},
+  year    = {2024},
+  url     = {https://spinframework.dev/v3/go-components},
+  urldate = {2026-05-29}
+}
+
+@online{tokio2024runtime,
+  author  = {{The Tokio Authors}},
+  title   = {{Tokio}: An asynchronous {Rust} runtime},
+  year    = {2024},
+  url     = {https://tokio.rs/},
+  urldate = {2026-05-29}
+}
+
+@online{axum2024,
+  author  = {{The Tokio Authors}},
+  title   = {axum: Ergonomic and modular web framework built with {Tokio}, {Tower}, and {Hyper}},
+  year    = {2024},
+  url     = {https://docs.rs/axum/},
+  urldate = {2026-05-29}
+}
+
+@online{go2024effective,
+  author  = {{The Go Authors}},
+  title   = {Effective {Go}},
+  year    = {2024},
+  url     = {https://go.dev/doc/effective_go},
+  urldate = {2026-05-29}
+}
+
+@online{flannel2024,
+  author  = {{The Flannel Authors}},
+  title   = {Flannel: A simple and easy way to configure a layer~3 network fabric designed for {Kubernetes}},
+  year    = {2024},
+  url     = {https://github.com/flannel-io/flannel},
+  urldate = {2026-05-29}
+}
+
+@online{google2024cadvisor,
+  author  = {{Google}},
+  title   = {{cAdvisor}: Container resource usage and performance analyser},
+  year    = {2024},
+  url     = {https://github.com/google/cadvisor},
+  urldate = {2026-05-29}
 }
