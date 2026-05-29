@@ -3,38 +3,46 @@
 
 \section{Abstract}
 
-The artefacts supporting this thesis are distributed across three public Git repositories: an infrastructure repository that provisions a single-node Kubernetes 1.34 cluster on Hetzner Cloud via Terraform plus \texttt{cloud-init} plus \texttt{kubeadm}; an experiments repository containing the four benchmark variants (\texttt{wasm-rust}, \texttt{wasm-tinygo}, \texttt{docker-rust}, \texttt{docker-golang}) across the two stateless \acs{HTTP} workloads (prime sieve, memory bandwidth), the k6 load-generator scripts, and the Prometheus / chart-regeneration helpers; and this thesis source. The end-to-end reproduction path is two \texttt{make} invocations against the infrastructure repository followed by a per-benchmark \texttt{run\_experiment.sh} script in the experiments repository, on a single Hetzner ccx23 \acs{VM} (4 vCPU, 16\,GB \acs{RAM}). The multi-node scaling experiments referenced as future work in Section~\ref{sec:future_work_multinode} are deferred and are not part of this artefact.
+\begin{sloppypar}
+The artefacts supporting this thesis are distributed across three public Git repositories. The first is an infrastructure repository that provisions a single-node Kubernetes 1.34 cluster on Hetzner Cloud via Terraform plus \texttt{cloud-init} plus \texttt{kubeadm}. The second is an experiments repository containing the four benchmark variants (\texttt{wasm-rust}, \texttt{wasm-tinygo}, \texttt{docker-rust}, \texttt{docker-golang}) across the four stateless \acs{HTTP} workloads (prime sieve, memory bandwidth, HTTP fan-out, JSON round-trip), the k6 load-generator scripts, the supporting in-cluster \texttt{io-echo} backend used by the fan-out benchmark, and the Prometheus / chart-regeneration helpers. The third is this thesis source. The end-to-end reproduction path is two \texttt{make} invocations against the infrastructure repository followed by a per-benchmark \texttt{run\_experiment.sh} script in the experiments repository, on a single Hetzner ccx23 \acs{VM} (4 vCPU, 16\,GB \acs{RAM}). The multi-node scaling experiments referenced as future work in Section~\ref{sec:future_work_multinode} are deferred and are not part of this artefact.
+\end{sloppypar}
 
 \section{Artifact check-list (meta-information)}
 
 \begin{description}
-    \item[Program:] Sieve of Eratosthenes \acs{HTTP} service (benchmark 01) and heap-allocation~+~SHA-256 \acs{HTTP} service (benchmark 02), each implemented as four variants (\texttt{wasm-rust}, \texttt{wasm-tinygo}, \texttt{docker-rust}, \texttt{docker-golang}).
-    \item[Compilation:] Rust 1.94 with \texttt{cargo} and \texttt{cargo-component}, Go 1.26, TinyGo 0.40.0 (\texttt{-target=wasip1 -gc=conservative -opt=2}).
-    \item[Run-time environment:] Ubuntu 24.04 LTS, Kubernetes 1.34 via \texttt{kubeadm}, containerd 2.0.2, \texttt{containerd-shim-spin-v2} v0.17.0, Flannel CNI, local-path-provisioner.
-    \item[Hardware:] One Hetzner Cloud ccx23 \acs{VM} (4$\times$ AMD EPYC vCPU, 16\,GB \acs{RAM}, 160\,GB NVMe), location \texttt{nbg1}.
-    \item[Metrics:] Requests per second; end-to-end latency p50/p95/p99; cold- and warm-start latency; container \acs{RSS} at idle and at peak load; \acs{CPU} consumption in millicores; on-disk \acs{OCI} artifact size.
-    \item[Output:] Per-variant \texttt{*\_summary.json} files (aggregate k6 metrics), per-variant \texttt{*\_k6.json} files (raw k6 output), and per-mode aggregates \texttt{cold\_start.json}, \texttt{warm\_start.json}, \texttt{resource\_metrics.json}, \texttt{image\_sizes.json}, together with the PNG charts under \texttt{thesis-experiments/results/0\{1,2\}-*/\{limited,unlimited\}/} that Chapter~\ref{chap:evaluation} embeds.
-    \item[Experiments:] \texttt{01-prime-sieve} and \texttt{02-memory-bandwidth}, each run in both \emph{limited} (single worker thread / single replica) and \emph{unlimited} (\texttt{GOMAXPROCS=4}, \texttt{TOKIO\_WORKER\_THREADS=4}, \texttt{SpinApp~spec.replicas:~4}) modes.
-    \item[Approximate disk space:] A few \acs{GB} total, dominated by raw k6 \acs{JSON} output and the Prometheus \acs{PVC}.
-    \item[Approximate wall-clock to reproduce:] ${\sim}30$\,min for cluster provisioning, plus ${\sim}20$\,min per benchmark mode, totalling ${\sim}2$\,h end-to-end.
-    \item[Publicly available:] Yes; the three repositories are cited as \cite{musaev2026thesisinfra, musaev2026thesisexperiments, musaev2026thesissource}.
+    \item[Program:] \begin{sloppypar}Sieve of Eratosthenes \acs{HTTP} service (benchmark 01), heap-allocation~+~SHA-256 \acs{HTTP} service (benchmark 02), HTTP fan-out service backed by an in-cluster \texttt{io-echo} delay-injecting sidecar (benchmark 03), and \acs{JSON} round-trip service implementing parse / sort / aggregate / re-serialise (benchmark 04), each implemented as four variants (\texttt{wasm-rust}, \texttt{wasm-tinygo}, \texttt{docker-rust}, \texttt{docker-golang}).\end{sloppypar}
+    \item[Compilation:] \begin{sloppypar}Rust 1.94 with \texttt{cargo} and \texttt{cargo-component}, Go 1.26, TinyGo 0.40.0 (\texttt{-target=wasip1 -gc=conservative -opt=2}).\end{sloppypar}
+    \item[Run-time environment:] \begin{sloppypar}Ubuntu 24.04 LTS, Kubernetes 1.34 via \texttt{kubeadm}, containerd 2.0.2, \texttt{containerd-shim-spin-v2} v0.17.0, Flannel CNI, local-path-provisioner.\end{sloppypar}
+    \item[Hardware:] \begin{sloppypar}One Hetzner Cloud ccx23 \acs{VM} (4$\times$ AMD EPYC vCPU, 16\,GB \acs{RAM}, 160\,GB NVMe), location \texttt{nbg1}.\end{sloppypar}
+    \item[Metrics:] Requests per second, end-to-end latency at p50/p95/p99, cold- and warm-start latency, container \acs{RSS} at idle and at peak load, \acs{CPU} consumption in millicores, and on-disk \acs{OCI} artifact size.
+    \item[Output:] \begin{sloppypar}Per-variant \texttt{*\_summary.json} files (aggregate k6 metrics), per-variant \texttt{*\_k6.json} files (raw k6 output), and per-mode aggregates \texttt{cold\_start.json}, \texttt{warm\_start.json}, \texttt{resource\_metrics.json}, \texttt{image\_sizes.json}, \texttt{binary\_sizes.json}, together with the PNG charts under \texttt{thesis-experiments/results/0\{1,2,3,4\}-*/\{limited,unlimited\}/} that Chapter~\ref{chap:evaluation} embeds. The \acs{JSON} round-trip artefact additionally produces a per-$N$ family of summary files (\texttt{*\_n\{100,1000,10000,100000\}\_summary.json}) for the body-size sweep.\end{sloppypar}
+    \item[Experiments:] \begin{sloppypar}\texttt{01-prime-sieve}, \texttt{02-memory-bandwidth}, \texttt{03-http-fanout}, and \texttt{04-json-roundtrip}. The first three are run in both \emph{limited} (single worker thread / single replica) and \emph{unlimited} (\texttt{GOMAXPROCS=4}, \texttt{TOKIO\_WORKER\_THREADS=4}, \texttt{SpinApp~spec.replicas:~4}) modes. The fourth additionally sweeps the request-body length $N \in \{100, 1\,000, 10\,000, 100\,000\}$ in each mode.\end{sloppypar}
+    \item[Approximate disk space:] A few \acs{GB} total, dominated by raw k6 \acs{JSON} output (which grows with the $N$-sweep family of files for benchmark 04) and the Prometheus \acs{PVC}.
+    \item[Approximate wall-clock to reproduce:] ${\sim}30$\,min for cluster provisioning, plus ${\sim}20$\,min per benchmark mode for 01--03 (six benchmark modes), plus ${\sim}40$\,min for the four-point $N$-sweep of benchmark 04 in each mode, totalling ${\sim}4$\,h end-to-end.
+    \item[Publicly available:] Yes. The three repositories are cited as \cite{musaev2026thesisinfra, musaev2026thesisexperiments, musaev2026thesissource}.
 \end{description}
 
 \section{Description}
 \subsection{How to access}
 \label{sec:repro_how_to_access}
 
-The complete set of artefacts supporting the experiments in this thesis is distributed across three public Git repositories hosted on GitHub. Each repository is referenced from its corresponding chapter; this subsection groups them together as a single point of entry.
+The complete set of artefacts supporting the experiments in this thesis is distributed across three public Git repositories hosted on GitHub. Each repository is referenced from its corresponding chapter. This subsection groups them together as a single point of entry.
 
 \begin{itemize}
     \item \textbf{Infrastructure setup} \textendash{} \cite{musaev2026thesisinfra}.
+\begin{sloppypar}
           Kubernetes (\texttt{kubeadm}) and SpinKube cluster provisioning, Hetzner Cloud Terraform modules, cloud-init bootstrap scripts, and the \texttt{containerd}~/ \texttt{containerd-shim-spin-v2} installation manifests used to build the four-variant experimental cluster described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}.
+\end{sloppypar}
 
     \item \textbf{Benchmark implementations and result data} \textendash{} \cite{musaev2026thesisexperiments}.
+\begin{sloppypar}
           The four primary benchmark variants (\texttt{docker-golang}, \texttt{docker-rust}, \texttt{wasm-rust}, \texttt{wasm-tinygo}), the k6 load-generator configurations, the Prometheus scrape rules, and the raw \texttt{results/} directory referenced throughout \hyperref[chap:evaluation]{Chapter~\ref{chap:evaluation}}.
+\end{sloppypar}
 
     \item \textbf{Thesis source} \textendash{} \cite{musaev2026thesissource}.
+\begin{sloppypar}
           The \LaTeX{} source of this document, including all chapter \texttt{.tex} files, the bibliography, TikZ figure sources, and the build instructions in the \texttt{Makefile}.
+\end{sloppypar}
 \end{itemize}
 
 All three repositories are tagged at the commit corresponding to thesis submission so that a reader can clone the exact state of the artefacts that produced the reported results.
@@ -42,28 +50,36 @@ All three repositories are tagged at the commit corresponding to thesis submissi
 \subsection{Hardware dependencies}
 \label{sec:repro_hardware}
 
-The single-node measurement environment requires one Hetzner Cloud ccx23 \acs{VM} (4$\times$ AMD EPYC vCPU, 16\,GB \acs{RAM}, 160\,GB NVMe \acs{SSD}). The Hetzner default 8-core account quota is sufficient. The Terraform module accepts the location \texttt{nbg1} (Nuremberg) by default; any other Hetzner Cloud location should work without changes. An admin workstation with outbound \acs{SSH} (port 22) and \texttt{kubectl} (port 6443) connectivity to the \acs{VM}'s public \acs{IP} is required for provisioning and benchmark execution. The deferred multi-node mode (Section~\ref{sec:future_work_multinode}) would require additional Hetzner instances under the same account, but is not exercised by this artefact.
+\begin{sloppypar}
+The single-node measurement environment requires one Hetzner Cloud ccx23 \acs{VM} (4$\times$ AMD EPYC vCPU, 16\,GB \acs{RAM}, 160\,GB NVMe \acs{SSD}). The Hetzner default 8-core account quota is sufficient. The Terraform module accepts the location \texttt{nbg1} (Nuremberg) by default. Any other Hetzner Cloud location should work without changes. An admin workstation with outbound \acs{SSH} (port 22) and \texttt{kubectl} (port 6443) connectivity to the \acs{VM}'s public \acs{IP} is required for provisioning and benchmark execution. The deferred multi-node mode (Section~\ref{sec:future_work_multinode}) would require additional Hetzner instances under the same account, but is not exercised by this artefact.
+\end{sloppypar}
 
 \subsection{Software dependencies}
 \label{sec:repro_software}
 
-On the admin workstation: Terraform $\geq 1.6$, \texttt{kubectl} matching cluster version 1.34, Helm~3, \texttt{make}, Docker~26 (to build and push the two Docker variants to a registry), Rust~1.94 with \texttt{rustup target add wasm32-wasip2} and \texttt{cargo install cargo-component --locked}, Go~1.26, TinyGo~0.40.0 (installed from the upstream \texttt{.tar.gz} release; no stable \texttt{apt} package on Ubuntu), the Spin \acs{CLI} v3+, k6 (installable via the Grafana \texttt{apt} repository), and Python~3 with \texttt{matplotlib} for chart regeneration.
+\begin{sloppypar}
+On the admin workstation: Terraform $\geq 1.6$, \texttt{kubectl} matching cluster version 1.34, Helm~3, \texttt{make}, Docker~26 (to build and push the two Docker variants to a registry), Rust~1.94 with \texttt{rustup target add wasm32-wasip2} and \texttt{cargo install cargo-component --locked}, Go~1.26, TinyGo~0.40.0 (installed from the upstream \texttt{.tar.gz} release, since no stable \texttt{apt} package is available on Ubuntu), the Spin \acs{CLI} v3+, k6 (installable via the Grafana \texttt{apt} repository), and Python~3 with \texttt{matplotlib} for chart regeneration.
+\end{sloppypar}
 
+\begin{sloppypar}
 On the provisioned cluster, the following components are installed automatically by \texttt{cloud-init} and by the \texttt{make deploy} target and therefore do not need to be installed manually: containerd~2.0.2, \texttt{runc}~1.2.4, CNI plugins~1.6.2, \texttt{containerd-shim-spin-v2}~v0.17.0, \texttt{cert-manager}~v1.16.3, SpinOperator~v0.6.1 (Helm chart \texttt{spinframework/spin-operator}), and \texttt{kube-prometheus-stack} (community Helm chart, with the values in \texttt{observability-values.yaml}).
+\end{sloppypar}
 
 \section{Installation}
 \label{sec:repro_installation}
 
+\begin{sloppypar}
 The following procedure provisions the single-node cluster end-to-end. All \texttt{make} targets referenced below are defined in \texttt{thesis-infra-setup/Makefile} and are idempotent: re-running \texttt{make deploy} against an established cluster is a no-op.
+\end{sloppypar}
 
 \begin{enumerate}
-    \item Clone the three repositories side-by-side under a common parent directory (for example \texttt{\textasciitilde/coding/master-thesis/}). The Terraform Makefile and the per-benchmark \texttt{run\_experiment.sh} scripts assume this sibling layout.
-    \item Populate \texttt{thesis-infra-setup/terraform.tfvars} with a Hetzner Cloud API token (\texttt{hcloud\_token}), an \acs{SSH} public key (\texttt{ssh\_public\_key}), and the admin workstation's egress \acs{IP}/CIDR (\texttt{admin\_ip\_cidr}). Leave \texttt{worker\_count = 0}, which is the single-node default.
-    \item Provision the cluster: \texttt{make up}. This runs \texttt{terraform apply}, waits for \texttt{cloud-init} to complete, runs \texttt{kubeadm init} for Kubernetes 1.34, installs the Flannel CNI plug-in and the local-path-provisioner, registers \texttt{containerd-shim-spin-v2} with containerd, and removes the control-plane taint so that the single node can also schedule workload pods.
-    \item Fetch the cluster's kubeconfig: \texttt{make configure}. This writes \texttt{hetzner-thesis.yaml} into the repository root and rewrites the API-server endpoint to the \acs{VM}'s public \acs{IP}.
-    \item Label the node for SpinKube pod scheduling: \texttt{make label}.
-    \item Install the cluster add-ons: \texttt{make deploy}. This installs \texttt{cert-manager}~v1.16.3, the SpinOperator Helm chart (v0.6.1) together with the \texttt{wasmtime-spin} \texttt{RuntimeClass}, and \texttt{kube-prometheus-stack} parameterised by \texttt{observability-values.yaml} (5\,s scrape interval, Grafana exposed as a \acs{NodePort}).
-    \item Sanity-check the runtime path: \texttt{make test} applies \texttt{test-spin.yaml} (a Spin ``hello'' sample) and expects an \acs{HTTP}~200 response.
+    \item \begin{sloppypar}Clone the three repositories side-by-side under a common parent directory (for example \texttt{\textasciitilde/coding/master-thesis/}). The Terraform Makefile and the per-benchmark \texttt{run\_experiment.sh} scripts assume this sibling layout.\end{sloppypar}
+    \item \begin{sloppypar}Populate \texttt{thesis-infra-setup/terraform.tfvars} with a Hetzner Cloud API token (\texttt{hcloud\_token}), an \acs{SSH} public key (\texttt{ssh\_public\_key}), and the admin workstation's egress \acs{IP}/CIDR (\texttt{admin\_ip\_cidr}). Leave \texttt{worker\_count = 0}, which is the single-node default.\end{sloppypar}
+    \item \begin{sloppypar}Provision the cluster: \texttt{make up}. This runs \texttt{terraform apply}, waits for \texttt{cloud-init} to complete, runs \texttt{kubeadm init} for Kubernetes 1.34, installs the Flannel CNI plug-in and the local-path-provisioner, registers \texttt{containerd-shim-spin-v2} with containerd, and removes the control-plane taint so that the single node can also schedule workload pods.\end{sloppypar}
+    \item \begin{sloppypar}Fetch the cluster's kubeconfig: \texttt{make configure}. This writes \texttt{hetzner-thesis.yaml} into the repository root and rewrites the API-server endpoint to the \acs{VM}'s public \acs{IP}.\end{sloppypar}
+    \item \begin{sloppypar}Label the node for SpinKube pod scheduling: \texttt{make label}.\end{sloppypar}
+    \item \begin{sloppypar}Install the cluster add-ons: \texttt{make deploy}. This installs \texttt{cert-manager}~v1.16.3, the SpinOperator Helm chart (v0.6.1) together with the \texttt{wasmtime-spin} \texttt{RuntimeClass}, and \texttt{kube-prometheus-stack} parameterised by \texttt{observability-values.yaml} (5\,s scrape interval, Grafana exposed as a \acs{NodePort}).\end{sloppypar}
+    \item \begin{sloppypar}Sanity-check the runtime path: \texttt{make test} applies \texttt{test-spin.yaml} (a Spin ``hello'' sample) and expects an \acs{HTTP}~200 response.\end{sloppypar}
 \end{enumerate}
 
 Steps~1--7 typically complete in ${\sim}30$\,minutes of wall-clock time.
@@ -71,7 +87,9 @@ Steps~1--7 typically complete in ${\sim}30$\,minutes of wall-clock time.
 \section{Experiment workflow}
 \label{sec:repro_workflow}
 
-The two benchmarks share the same four-variant structure, the same NodePort assignment (30081 \texttt{wasm-rust}, 30082 \texttt{wasm-tinygo}, 30083 \texttt{docker-rust}, 30084 \texttt{docker-golang}), and the same orchestrator script layout. They are run sequentially because the two benchmarks share NodePorts; the \texttt{02-memory-bandwidth} script automatically tears down the \texttt{01-prime-sieve} \texttt{SpinApp}s and \texttt{Deployment}s before deploying its own.
+\begin{sloppypar}
+The four benchmarks share the same four-variant structure, the same NodePort assignment (30081 \texttt{wasm-rust}, 30082 \texttt{wasm-tinygo}, 30083 \texttt{docker-rust}, 30084 \texttt{docker-golang}), and the same orchestrator script layout. They are run sequentially because all four benchmarks share NodePorts. Each \texttt{run\_experiment.sh} script automatically tears down the previous benchmark's \texttt{SpinApp}s and \texttt{Deployment}s before deploying its own. The HTTP fan-out benchmark additionally requires the \texttt{io-echo} backend (Section~\ref{sec:impl_io_echo}) and the kernel-parameter tuning documented in Section~\ref{sec:repro_workflow_03} below.
+\end{sloppypar}
 
 \subsection{Benchmark 01 --- prime sieve}
 \label{sec:repro_workflow_01}
@@ -79,37 +97,77 @@ The two benchmarks share the same four-variant structure, the same NodePort assi
 Build and push the four variant images:
 
 \begin{itemize}
-    \item \textbf{\texttt{wasm-rust}:} \texttt{cd wasm/rust/01-prime-sieve \&\& cargo component build --release} followed by \texttt{spin registry push docker.io/<user>/prime-sieve-wasm-rust:latest}. Build path: \texttt{thesis-experiments/wasm/rust/01-prime-sieve/}.
-    \item \textbf{\texttt{wasm-tinygo}:} \texttt{cd wasm/tinygo/01-prime-sieve \&\& tinygo build -target=wasip1 -gc=conservative -opt=2 -o app.wasm .} followed by \texttt{spin registry push docker.io/<user>/prime-sieve-wasm-tinygo:latest}. Build path: \texttt{thesis-experiments/wasm/tinygo/01-prime-sieve/}.
-    \item \textbf{\texttt{docker-rust}:} \texttt{docker build -t <reg>/prime-sieve-docker-rust:latest docker/rust/01-prime-sieve/} followed by \texttt{docker push}. The \texttt{Dockerfile} uses \texttt{rust:1.94-*} as the builder and a \texttt{scratch} runtime stage.
-    \item \textbf{\texttt{docker-golang}:} \texttt{docker build -t <reg>/prime-sieve-docker-golang:latest docker/golang/01-prime-sieve/} followed by \texttt{docker push}. The \texttt{Dockerfile} uses \texttt{golang:1.26-alpine} as the builder.
+    \item \begin{sloppypar}\textbf{\texttt{wasm-rust}:} \texttt{cd wasm/rust/01-prime-sieve \&\& cargo component build --release} followed by \texttt{spin registry push docker.io/<user>/prime-sieve-wasm-rust:latest}. Build path: \texttt{thesis-experiments/wasm/rust/01-prime-sieve/}.\end{sloppypar}
+    \item \begin{sloppypar}\textbf{\texttt{wasm-tinygo}:} \texttt{cd wasm/tinygo/01-prime-sieve \&\& tinygo build -target=wasip1 -gc=conservative -opt=2 -o app.wasm .} followed by \texttt{spin registry push docker.io/<user>/prime-sieve-wasm-tinygo:latest}. Build path: \texttt{thesis-experiments/wasm/tinygo/01-prime-sieve/}.\end{sloppypar}
+    \item \begin{sloppypar}\textbf{\texttt{docker-rust}:} \texttt{docker build -t <reg>/prime-sieve-docker-rust:latest docker/rust/01-prime-sieve/} followed by \texttt{docker push}. The \texttt{Dockerfile} uses \texttt{rust:1.94-*} as the builder and a \texttt{scratch} runtime stage.\end{sloppypar}
+    \item \begin{sloppypar}\textbf{\texttt{docker-golang}:} \texttt{docker build -t <reg>/prime-sieve-docker-golang:latest docker/golang/01-prime-sieve/} followed by \texttt{docker push}. The \texttt{Dockerfile} uses \texttt{golang:1.26-alpine} as the builder.\end{sloppypar}
 \end{itemize}
 
-Deploy the four variants: \texttt{kubectl apply -f k8s/01-prime-sieve/namespace.yaml \&\& kubectl apply -f k8s/01-prime-sieve/}. The manifests bind the four NodePorts listed above; the variant order matches the NodePort-ascending convention used throughout this thesis.
+\begin{sloppypar}
+Deploy the four variants: \texttt{kubectl apply -f k8s/01-prime-sieve/namespace.yaml \&\& kubectl apply -f k8s/01-prime-sieve/}. The manifests bind the four NodePorts listed above. The variant order matches the NodePort-ascending convention used throughout this thesis.
+\end{sloppypar}
 
-Run the experiment: \texttt{./benchmarks/01-prime-sieve/run\_experiment.sh -{}-scaling-experiment both}. The script exports \texttt{KUBECONFIG=../thesis-infra-setup/hetzner-thesis.yaml}, reads the node's public \acs{IP} from \texttt{terraform output -raw instance\_public\_ip}, sequentially drives k6 (50 \acp{VU}, 20\,s ramp, 60\,s hold) against each variant in both the \emph{limited} and \emph{unlimited} configurations, queries Prometheus for \texttt{container\_memory\_rss} and \texttt{container\_cpu\_usage\_seconds\_total}, runs the cold-start (\texttt{kubectl scale --replicas=0} $\to$ 1) and warm-start measurement sequences, captures \acs{OCI} artifact sizes via \texttt{docker inspect} (and, for the Spin variants, via the compiled \texttt{.wasm} artifact on disk), and finally invokes \texttt{analyze.py} to regenerate the per-mode PNG charts under \texttt{results/01-prime-sieve/\{limited,unlimited\}/}.
+\begin{sloppypar}
+Run the experiment: \texttt{./benchmarks/\allowbreak 01-prime-sieve/\allowbreak run\_experiment.sh\allowbreak{} -{}-scaling-experiment both}. The script exports \texttt{KUBECONFIG=\allowbreak../\allowbreak thesis-infra-setup/\allowbreak hetzner-thesis.yaml}, reads the node's public \acs{IP} from \texttt{terraform output\allowbreak{} -raw\allowbreak{} instance\_public\_ip}, sequentially drives k6 (50 \acp{VU}, 20\,s ramp, 60\,s hold) against each variant in both the \emph{limited} and \emph{unlimited} configurations, queries Prometheus for \texttt{container\_memory\_rss} and \texttt{container\_cpu\_usage\_seconds\_total}, runs the cold-start (\texttt{kubectl scale --replicas=0} $\to$ 1) and warm-start measurement sequences, captures \acs{OCI} artifact sizes via \texttt{docker inspect} (and, for the Spin variants, via the compiled \texttt{.wasm} artifact on disk), and finally invokes \texttt{analyze.py} to regenerate the per-mode PNG charts under \texttt{results/\allowbreak 01-prime-sieve/\allowbreak\{limited,unlimited\}/}.
+\end{sloppypar}
 
 \subsection{Benchmark 02 --- memory bandwidth}
 \label{sec:repro_workflow_02}
 
-The procedure is identical in shape. Build paths are \texttt{thesis-experiments/\{docker,wasm\}/\{rust,golang,tinygo\}/02-memory-bandwidth/}. Deploy with \texttt{kubectl apply -f k8s/02-memory-bandwidth/}; the script first tears down any \texttt{01-prime-sieve} pods because both benchmarks share the four NodePorts. Run with \texttt{./benchmarks/02-memory-bandwidth/run\_experiment.sh -{}-scaling-experiment both}. The endpoint is \texttt{GET /membw?size\_kb=64\&no\_hash=0}; the k6 ramp / hold parameters, the Prometheus queries, and the cold/warm-start sequence mirror benchmark~01.
+\begin{sloppypar}
+The procedure is identical in shape. Build paths are \texttt{thesis-experiments/\allowbreak\{docker,wasm\}/\allowbreak\{rust,golang,tinygo\}/\allowbreak 02-memory-bandwidth/}. Deploy with \texttt{kubectl apply -f k8s/\allowbreak 02-memory-bandwidth/}. The script first tears down any \texttt{01-prime-sieve} pods because both benchmarks share the four NodePorts. Run with \texttt{./benchmarks/\allowbreak 02-memory-bandwidth/\allowbreak run\_experiment.sh\allowbreak{} -{}-scaling-experiment both}. The endpoint is \texttt{GET /membw?size\_kb=64\&no\_hash=0}. The k6 ramp / hold parameters, the Prometheus queries, and the cold/warm-start sequence mirror benchmark~01.
+\end{sloppypar}
 
+\begin{sloppypar}
 The limited-mode configuration uses \texttt{GOMAXPROCS=1} (\texttt{docker-golang}), \texttt{TOKIO\_WORKER\_THREADS=1} (\texttt{docker-rust}), and \texttt{SpinApp~spec.replicas:~1} (both \acs{Wasm} variants). The unlimited-mode configuration raises these to \texttt{GOMAXPROCS=4}, \texttt{TOKIO\_WORKER\_THREADS=4}, and \texttt{SpinApp~spec.replicas:~4}, and additionally raises the Kubernetes \texttt{limits.cpu} to \texttt{4000m} so that cgroup CPU bandwidth control does not throttle the additional worker threads in the 4-vCPU environment of the Hetzner ccx23 host.
+\end{sloppypar}
+
+\subsection{Benchmark 03 --- HTTP fan-out}
+\label{sec:repro_workflow_03}
+
+\begin{sloppypar}
+The I/O-bound benchmark amplifies each inbound request into $N$ concurrent outbound \acs{HTTP} GETs against the \texttt{io-echo} backend, so the procedure is identical in shape to benchmarks 01--02 with three differences. First, the \texttt{io-echo} backend must be deployed alongside the four primary variants: \texttt{kubectl apply -f k8s/03-http-fanout/io-echo/} (single replica, ClusterIP-only \texttt{Service}, listening on \texttt{io-echo.http-fanout.svc.cluster.local:80}). Second, the four Spin variants declare \texttt{allowed\_outbound\_hosts = ["http://io-echo.http-fanout.svc.cluster.local:80"]} in \texttt{spin.toml}---the deny-by-default outbound capability gate described at Section~\ref{sec:impl_http_fanout}. Third, the run requires three Linux kernel-parameter increases over the stock Ubuntu defaults: \texttt{nf\_conntrack\_max~=~262144}, \texttt{ip\_local\_port\_range~=~"1024 65535"}, and \texttt{somaxconn~=~4096}. The \texttt{cloud-init.sh} in the infrastructure repository already applies these settings. Reproducing on a different cluster requires them to be set at boot or via \texttt{sysctl} before the experiment is run, otherwise the 50~\acp{VU} $\times$ $N=5$ load saturates the stock 65,536-entry conntrack table~\cite{linux2024conntrack} within seconds and the \texttt{kube-apiserver} becomes unreachable mid-experiment (the conntrack-exhaustion incident is documented at Section~\ref{sec:discussion_fanout}).
+\end{sloppypar}
+
+\begin{sloppypar}
+Build paths are \texttt{thesis-experiments/\allowbreak\{docker,wasm\}/\allowbreak\{rust,golang,tinygo\}/\allowbreak 03-http-fanout/}. Deploy with \texttt{kubectl apply -f k8s/\allowbreak 03-http-fanout/}. Run with \texttt{./benchmarks/\allowbreak 03-http-fanout/\allowbreak run\_experiment.sh\allowbreak{} -{}-scaling-experiment both}. The endpoint is \texttt{GET /fanout?n=5\&delay\_ms=50}. The k6 ramp / hold parameters and the per-mode resource-fairness configuration mirror benchmarks 01--02. The \texttt{wasm-tinygo} variant intentionally dispatches its $N$ outbound calls sequentially via blocking \texttt{spinhttp.Send} because TinyGo's wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()}. This is a runtime behaviour, not a configuration mistake, and is preserved in the experimental design as a documented finding about ecosystem maturity (Section~\ref{sec:discussion_fanout}).
+\end{sloppypar}
+
+\subsection{Benchmark 04 --- JSON round-trip}
+\label{sec:repro_workflow_04}
+
+\begin{sloppypar}
+The serialization benchmark exposes \texttt{POST /jsontx} accepting a JSON-encoded length-$N$ \texttt{i64} array. Each handler parses the body, sorts the array in descending order, computes the median by index (\texttt{arr[floor((n-1)/2)]} after the descending sort---this tie-break must match byte-for-byte across the four variants for the responses to be comparable, see Section~\ref{sec:impl_json_roundtrip}), aggregates min / max / mean / sum, and re-serialises the response. Build paths are \texttt{thesis-experiments/\allowbreak\{docker,wasm\}/\allowbreak\{rust,golang,tinygo\}/\allowbreak 04-json-roundtrip/}. Deploy with \texttt{kubectl apply -f k8s/\allowbreak 04-json-roundtrip/}. Run with \texttt{./benchmarks/\allowbreak 04-json-roundtrip/\allowbreak run\_experiment.sh\allowbreak{} -{}-scaling-experiment both\allowbreak{} -{}-n-sweep both}.
+\end{sloppypar}
+
+\begin{sloppypar}
+The \texttt{-{}-n-sweep both} flag drives k6 four times per variant per mode at $N \in \{100, 1\,000, 10\,000, 100\,000\}$, producing one summary file per \texttt{(variant, mode, N)} triple at \texttt{results/\allowbreak 04-json-roundtrip/\allowbreak\{limited,unlimited\}/\allowbreak<variant>\_n<N>\_summary.json}. The chart-generation step (\texttt{analyze.py}) reads these per-$N$ files to emit the \texttt{n\_sweep.png} panel embedded in Section~\ref{sec:eval_jsontx_nsweep}, in addition to the standard size / startup / throughput / latency / memory panels at the default $N=1000$ midpoint.
+\end{sloppypar}
 
 \section{Evaluation and expected results}
 \label{sec:repro_evaluation}
 
-Each experiment run materialises a deterministic on-disk layout under \texttt{thesis-experiments/results/0\{1,2\}-*/\{limited,unlimited\}/}: per-variant \texttt{*\_summary.json} files containing the aggregated k6 metrics, per-variant \texttt{*\_k6.json} files containing the raw k6 output for percentile recomputation, and the four per-mode aggregates \texttt{cold\_start.json}, \texttt{warm\_start.json}, \texttt{resource\_metrics.json}, and \texttt{image\_sizes.json}. The PNG charts that \texttt{chapters/06\_evaluation.tex} embeds are written into the same directory by \texttt{analyze.py}.
+\begin{sloppypar}
+Each experiment run materialises a deterministic on-disk layout under \texttt{thesis-experiments/\allowbreak results/\allowbreak 0\{1,2,3,4\}-*/\allowbreak\{limited,unlimited\}/}: per-variant \texttt{*\_summary.json} files containing the aggregated k6 metrics, per-variant \texttt{*\_k6.json} files containing the raw k6 output for percentile recomputation, and the per-mode aggregates \texttt{cold\_start.json}, \texttt{warm\_start.json}, \texttt{resource\_metrics.json}, \texttt{image\_sizes.json}, and \texttt{binary\_sizes.json}. The \texttt{04-json-roundtrip} layout additionally contains the per-$N$ family \texttt{<variant>\_n\allowbreak\{100,1000,10000,100000\}\_summary.json}. The PNG charts that \texttt{chapters/06\_evaluation.tex} embeds are written into the same directory by \texttt{analyze.py}.
+\end{sloppypar}
 
-A successful reproduction should yield, on \texttt{01-prime-sieve} in limited mode, approximately \texttt{docker-golang}~3250\,\acs{RPS} (p50 11.6\,ms), \texttt{wasm-rust}~3058\,\acs{RPS} (p50 12.8\,ms), \texttt{docker-rust}~2073\,\acs{RPS} (p50 20.7\,ms), and \texttt{wasm-tinygo}~1419\,\acs{RPS} (p50 29.5\,ms); on \texttt{02-memory-bandwidth} in limited mode, the four variants fall within the brackets reported in Section~\ref{sec:eval_performance}. Cold-start latency for both \acs{Wasm} variants and \texttt{docker-rust} sits in a ${\sim}25$--$35$\,ms band; \texttt{docker-golang}'s cold-start measurement should land in the multi-second range (${\sim}3.7$--$4.8$\,s). Absolute \acs{RPS} values may shift by a few percent between runs because of per-host EPYC-core variance, but the relative ordering of the four variants and the order-of-magnitude artifact-size gap (\texttt{wasm-rust} ${\sim}30\times$ smaller than \texttt{docker-golang}) are stable.
+\begin{sloppypar}
+A successful reproduction should yield, on \texttt{01-prime-sieve} in limited mode, approximately \texttt{docker-golang}~3240\,\acs{RPS} (p50 12.1\,ms), \texttt{wasm-rust}~2554\,\acs{RPS} (p50 15.1\,ms), \texttt{docker-rust}~1906\,\acs{RPS} (p50 23.5\,ms), and \texttt{wasm-tinygo}~1256\,\acs{RPS} (p50 33.1\,ms). On \texttt{02-memory-bandwidth} in limited mode, the four variants fall within the brackets reported in Section~\ref{sec:eval_performance}. On \texttt{03-http-fanout} in limited mode at the default load profile (50~\acp{VU} $\times$ $N=5$ $\times$ $\Delta=50$\,ms), approximately \texttt{docker-rust}~525\,\acs{RPS} (p50 61\,ms), \texttt{wasm-rust}~124\,\acs{RPS} (p50 199\,ms), \texttt{docker-golang}~100\,\acs{RPS} (p50 82\,ms), and \texttt{wasm-tinygo}~47\,\acs{RPS} (p50 953\,ms because of the enforced sequential outbound dispatch). On \texttt{04-json-roundtrip} in limited mode, all four variants serve ${\sim}1300$--$1430$\,\acs{RPS} at $N=100$ and converge to ${\sim}17$\,\acs{RPS} for the three faster variants at $N=100\,000$ (\texttt{docker-rust}~17.4, \texttt{wasm-rust}~17.3, \texttt{docker-golang}~17.1), with \texttt{wasm-tinygo} at 13.4\,\acs{RPS} (1.29$\times$ behind the leader). Cold-start latency for both \acs{Wasm} variants and \texttt{docker-rust} sits in a ${\sim}21$--$35$\,ms band across all four workloads. The \texttt{docker-golang} cold-start measurement should land in the multi-second range (${\sim}3.7$--$8.2$\,s depending on the workload). Absolute \acs{RPS} values may shift by a few percent between runs because of per-host EPYC-core variance, but the relative ordering of the four variants within each workload and the order-of-magnitude artifact-size gap (\texttt{wasm-rust} ${\sim}30\times$ smaller than \texttt{docker-golang}) are stable.
+\end{sloppypar}
 
-The chapter-6 figures can be regenerated \emph{without} re-running the benchmarks by invoking \texttt{python3 benchmarks/01-prime-sieve/analyze.py -{}-mode limited} and \texttt{-{}-mode unlimited}, and the equivalents under \texttt{benchmarks/02-memory-bandwidth/}. The script reads the existing \acs{JSON} files under \texttt{results/} and emits the exact PNG filenames that the evaluation chapter includes.
+\begin{sloppypar}
+The chapter-6 figures can be regenerated \emph{without} re-running the benchmarks by invoking \texttt{python3 benchmarks/01-prime-sieve/analyze.py -{}-mode limited} and \texttt{-{}-mode unlimited}, and the equivalents under \texttt{benchmarks/02-memory-bandwidth/}, \texttt{benchmarks/03-http-fanout/}, and \texttt{benchmarks/04-json-roundtrip/}. The script reads the existing \acs{JSON} files under \texttt{results/} and emits the exact PNG filenames that the evaluation chapter includes (including the \texttt{n\_sweep.png} panel for benchmark 04, which the \texttt{analyze.py} script assembles from the four per-$N$ summary files).
+\end{sloppypar}
 
 \section{Notes}
 \label{sec:repro_notes}
 
-The single-node measurement environment was chosen so that the four-variant comparison isolates runtime overhead from inter-node scheduling, kube-proxy load balancing, and network-fabric latency. The chapter-6 numbers therefore characterise per-pod behaviour rather than cross-host distributed behaviour; the deferred multi-node validation (different host fabric, replicas placed on distinct workers) is scoped in Section~\ref{sec:future_work_multinode} and is intentionally not part of this artefact.
+The single-node measurement environment was chosen so that the four-variant comparison isolates runtime overhead from inter-node scheduling, kube-proxy load balancing, and network-fabric latency. The chapter-6 numbers therefore characterise per-pod behaviour rather than cross-host distributed behaviour. The deferred multi-node validation (different host fabric, replicas placed on distinct workers) is scoped in Section~\ref{sec:future_work_multinode} and is intentionally not part of this artefact.
 
-Wasmtime runs in its default \acf{JIT} mode (Cranelift) throughout. Wasmtime's \acf{AOT} pre-compilation pathway via the \texttt{wasmtime compile} command is expected to narrow the throughput gap with native code, as discussed in Section~\ref{sec:future_work_aot}; the reported numbers therefore represent a conservative lower bound on the Wasmtime throughput attainable on this hardware.
+\begin{sloppypar}
+Wasmtime runs in its default \acf{JIT} mode (Cranelift) throughout~\cite{bytecodealliance2024wasmtime}. Wasmtime's \acf{AOT} pre-compilation pathway via the \texttt{wasmtime compile} command is expected to narrow the throughput gap with native code, as discussed in Section~\ref{sec:future_work_aot}. The reported numbers therefore represent a conservative lower bound on the Wasmtime throughput attainable on this hardware.
+\end{sloppypar}
 
+\begin{sloppypar}
 The four variants' source code, \texttt{Dockerfile}s, \texttt{SpinApp} \acs{CRD} manifests, and \texttt{spin.toml} configurations are also discussed in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. This appendix focuses on the operational view (commands, version pins, output shape, regeneration path) so that the chapter prose and the appendix do not duplicate hardware and software detail.
+\end{sloppypar}

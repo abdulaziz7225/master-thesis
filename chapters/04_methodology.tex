@@ -8,53 +8,75 @@ This chapter describes the research strategy employed to compare \acs{Wasm} and 
 
 This thesis employs a \textit{mixed-methods} approach combining a quantitative controlled experiment as the primary method with a qualitative developer experience assessment as the secondary method.
 
+\begin{sloppypar}
 The primary quantitative experiment follows a 2$\times$2 variant matrix: runtime (Docker/\texttt{runc} vs.\ \acs{Wasm}/SpinKube) crossed with language family (Rust vs.\ Go-family). This produces four primary implementation variants deployed to an isolated, reproducible cloud environment and subjected to identical load testing and startup-time measurements. All variants implement the same \acs{HTTP} \acs{API} and the same core algorithm, ensuring that any performance difference is attributable to the execution environment rather than to differences in application logic. The benchmark source code, k6 load-generator scripts, and raw result data are openly available in the \texttt{thesis-experiments} repository~\cite{musaev2026thesisexperiments}.
+\end{sloppypar}
 
+\begin{sloppypar}
 The \acs{Wasm} variants use the standardised \texttt{wasi:http/incoming-handler} Component Model interface (\acs{WASI}~P2) via Fermyon Spin and Wasmtime/Cranelift. This design choice reflects the current production-ready trajectory of \acs{Wasm} on \acs{K8s}: the \acs{WASI}~P2 Component Model provides a standards-compliant \acs{HTTP} handler interface, replacing the proprietary socket workarounds historically required under \acs{WASI}~P1.
+\end{sloppypar}
 
-An important design choice is that this study does \textit{not} attempt to isolate the pure runtime overhead by holding the language constant across all four variants. Instead, it deliberately compares the two dominant paradigms in their \textit{native} technological contexts: Docker with Go (the industry standard), Docker with Rust (a deconfounding baseline), and \acs{Wasm} with Rust and TinyGo (the \acs{Wasm}-native ecosystem). This design reflects the real-world decision an engineering team faces when evaluating a migration from Docker to \acs{Wasm}, while the Rust-on-Docker baseline enables partial deconfounding of the language variable (see Section~\ref{sec:tech_selection}).
+An important design choice is that the four-variant matrix is built to support \textit{two complementary lenses simultaneously} rather than a single language-controlled comparison across all four variants. The first lens compares the two paradigms in their \textit{native} technological contexts: Docker with Go (the industry standard) on one side, and \acs{Wasm} with Rust and TinyGo (the \acs{Wasm}-targeting ecosystem) on the other. This lens reflects the real-world decision an engineering team faces when evaluating a migration from Docker to \acs{Wasm}, where the language choice is rarely independent of the runtime choice. The second lens uses the Rust-on-Docker variant as a language-controlled baseline: because docker-rust and wasm-rust share the same language, the delta between them isolates (approximately) the overhead attributable to the SpinKube/Wasmtime runtime, \acs{SFI} bounds-checking, and Spin's single-instance dispatch model, independent of language-level differences such as memory-management strategy (see Section~\ref{sec:tech_selection}). The two lenses are deliberately retained together rather than being reduced to either one alone.
 
 \section{Selection of Technologies}
 \label{sec:tech_selection}
 
 \subsection{Docker/Golang: The Industry Baseline}
 
-The Docker/Golang variant serves as the primary baseline against which all other variants are measured. Go is the de facto language for cloud-native infrastructure tooling: \acs{K8s}~\cite{burns2016borg}, Docker~\cite{merkel2014docker}, Terraform~\cite{terraform2024hashicorp}, Prometheus~\cite{prometheus2024cncf}, and Grafana are all implemented in Go. Its goroutine-based concurrency model and the \texttt{net/http} standard library make it the idiomatic choice for \acs{HTTP} microservices. Among production-grade garbage-collected languages, Go offers competitive raw throughput while retaining ergonomic memory safety, making it a strong baseline for evaluating whether \acs{Wasm}'s elimination of bundled garbage collection overhead provides a meaningful performance advantage.
+\begin{sloppypar}
+The Docker/Golang variant serves as the primary baseline against which all other variants are measured. Go is the de facto language for cloud-native infrastructure tooling: \acs{K8s}~\cite{burns2016borg, k8s2024architecture}, Docker~\cite{merkel2014docker, docker2024whatcontainer}, Terraform~\cite{terraform2024hashicorp}, Prometheus~\cite{prometheus2024cncf}, and Grafana are all implemented in Go. Its goroutine-based concurrency model and the \texttt{net/http} standard library make it the idiomatic choice for \acs{HTTP} microservices~\cite{go2024effective}. Among production-grade garbage-collected languages, Go offers competitive raw throughput while retaining ergonomic memory safety, making it a strong baseline for evaluating whether \acs{Wasm}'s elimination of bundled garbage collection overhead provides a meaningful performance advantage.
+\end{sloppypar}
 
 \subsection{Docker/Rust: The Deconfounding Baseline}
 
+\begin{sloppypar}
 A second Docker-based baseline using Rust is included specifically to enable a language-controlled comparison. Because both docker-rust and wasm-rust use the same language, the performance delta between these two variants isolates (approximately) the overhead introduced by the SpinKube/Wasmtime runtime, \acs{SFI} bounds-checking, and the single-instance dispatch constraint imposed by the \texttt{SpinApp~spec.replicas:~1} limited-mode baseline (each \acs{WASI} P1/P2 component is architecturally single-threaded), independent of language-level differences such as memory management strategy.
+\end{sloppypar}
 
+\begin{sloppypar}
 Rust's axum/Tokio async stack provides full multi-threaded, asynchronous I/O---the maximum performance achievable on the Docker/\texttt{runc} path---making the docker-rust variant also a useful upper-bound reference for the \acs{Wasm} variants.
+\end{sloppypar}
 
 \subsection{Wasm/Rust: The Primary Experimental Variant}
 
-\acs{Wasm} supports more than 40 programming languages as compilation targets~\cite{fermyon2024langmatrix}. Rust was selected as the primary \acs{Wasm} experimental language for three reasons. First, Rust provides first-class, officially supported \texttt{wasm32-wasip1} and \texttt{wasm32-wasip2} targets maintained by the Rust core team; \texttt{wasm32-wasip2} has been Tier~2 stable since Rust~1.82~\cite{rustblogwasip2}. Second, Rust produces the smallest \acs{Wasm} binaries among systems languages because it has no garbage collector, no language runtime, and no \acs{OS} abstraction layer bundled into the binary. Third, the Spin \acs{SDK} for Rust (\texttt{spin-sdk~=~"5.2.0"}) provides a first-class \texttt{\#[http\_component]} macro that generates a standards-compliant \acs{WASI}~P2 component with no custom networking code.
+\begin{sloppypar}
+\acs{Wasm} supports more than 40 programming languages as compilation targets~\cite{fermyon2024langmatrix}. Rust was selected as the primary \acs{Wasm} experimental language for three reasons. First, Rust provides first-class, officially supported \texttt{wasm32-wasip1} and \texttt{wasm32-wasip2} targets maintained by the Rust core team~\cite{rustblogwasip2}. The \texttt{wasm32-wasip2} target has been Tier~2 stable since Rust~1.82~\cite{rustblogwasip2}. Second, Rust produces the smallest \acs{Wasm} binaries among systems languages because it has no garbage collector, no language runtime, and no \acs{OS} abstraction layer bundled into the binary~\cite{chiarlone2024serverside}. Third, the Spin \acs{SDK} for Rust (\texttt{spin-sdk~=~"5.2.0"}) provides a first-class \texttt{\#[http\_component]} macro that generates a standards-compliant \acs{WASI}~P2 component with no custom networking code~\cite{spinframework2024rust}.
+\end{sloppypar}
 
+\begin{sloppypar}
 The wasm-rust variant uses \texttt{cargo component build --release} (via \texttt{cargo-component}) to compile to a \acs{WASI}~P2 component. The resulting \texttt{.wasm} binary is published as a Spin \acs{OCI} artifact via \texttt{spin registry push}. Spin's Wasmtime/Cranelift host handles the \acs{HTTP} listener, request parsing, and response dispatch---the component itself exports only a single handler function, eliminating any need for manual \acs{TCP} socket management.
+\end{sloppypar}
 
 \subsection{Wasm/TinyGo: The Secondary Experimental Variant}
 
 TinyGo~\cite{tinygo2024} is a Go-compatible compiler optimised for embedded systems and \acs{Wasm} targets. It was selected to enable a partial Go-to-Go comparison with the docker-golang baseline, testing whether the concurrency model difference between Docker's goroutine scheduler and \acs{Wasm}'s request-handler model produces measurable performance differences when the language is held constant.
 
-Standard Go supports \texttt{GOOS=wasip1} since Go~1.21~\cite{goblogwasi2024}, but produces significantly larger \acs{Wasm} binaries because it bundles the full Go runtime (scheduler, garbage collector, and \acs{POSIX} abstraction layer). TinyGo is designed specifically for \acs{Wasm}/embedded targets and produces substantially smaller binaries by using a stripped-down runtime. TinyGo~0.40.0 targeting \texttt{wasip1} was pinned for this experiment.
+\begin{sloppypar}
+Standard Go supports \texttt{GOOS=wasip1} since Go~1.21~\cite{goblogwasi2024}, but produces significantly larger \acs{Wasm} binaries because it bundles the full Go runtime (scheduler, garbage collector, and \acs{POSIX} abstraction layer)~\cite{goblogwasi2024}. TinyGo is designed specifically for \acs{Wasm}/embedded targets and produces substantially smaller binaries by using a stripped-down runtime~\cite{tinygo2024}. TinyGo~0.40.0 targeting \texttt{wasip1} was pinned for this experiment.
+\end{sloppypar}
 
-The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). The handler function receives standard \texttt{net/http.ResponseWriter} and \texttt{*http.Request} arguments---identical to the docker-golang handler. \textbf{No custom socket code is required.} TinyGo's \texttt{-target=wasip2} flag cannot be used here: it hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK} uses a \acs{CGo} layer to export \texttt{fermyon:spin/inbound-http}, which Spin/Wasmtime accepts as a valid \acs{HTTP} trigger interface. The \texttt{-target=wasip1} flag is therefore required.
+\begin{sloppypar}
+The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). The handler function receives standard \texttt{net/http.ResponseWriter} and \texttt{*http.Request} arguments---identical to the docker-golang handler. \textbf{No custom socket code is required.} TinyGo's \texttt{-target=wasip2} flag cannot be used here: it hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}~\cite{tinygo2024, bytecodealliance2024componentmodel}. The Spin Go \acs{SDK} uses a \acs{CGo} layer to export \texttt{fermyon:spin/inbound-http}, which Spin/Wasmtime accepts as a valid \acs{HTTP} trigger interface~\cite{spinframework2024go}. The \texttt{-target=wasip1} flag is therefore required.
+\end{sloppypar}
 
 \subsection{Orchestration: Kubernetes (kubeadm) with RuntimeClass}
 
-Upstream Kubernetes v1.34, deployed via \texttt{kubeadm}, was chosen as the orchestration layer. \texttt{kubeadm} is the reference installer in the official Kubernetes documentation and the foundation that managed services such as \acs{AWS} \acs{EKS}, Google \acs{GKE}, and Azure \acs{AKS} run underneath; using it removes distribution-specific confounds from the runtime comparison. The benchmark \acs{VM} is sized at Hetzner Cloud \texttt{ccx23} (4 dedicated \acs{AMD} \acs{EPYC} vCPUs, 16\,\acs{GB} \acs{RAM}, 160\,\acs{GB} \acs{NVMe}) to give the kubeadm control plane, the kube-prometheus-stack observability stack, the SpinOperator, and the unlimited-mode scaling experiment comfortable headroom on a single node. kubeadm uses containerd~2.x as its \acs{CRI}, which is necessary for the \texttt{RuntimeClass}/SpinKube integration; Flannel provides the pod-network \acs{CNI} and Rancher's \texttt{local-path-provisioner} provides the default \texttt{StorageClass} for the Prometheus \acs{PVC}.
+\begin{sloppypar}
+Upstream Kubernetes v1.34, deployed via \texttt{kubeadm}, was chosen as the orchestration layer. \texttt{kubeadm} is the reference installer in the official Kubernetes documentation~\cite{k8s2024architecture} and the foundation that managed services such as \acs{AWS} \acs{EKS}, Google \acs{GKE}, and Azure \acs{AKS} run underneath~\cite{k8s2024architecture}. Using it removes distribution-specific confounds from the runtime comparison. The benchmark \acs{VM} is sized at Hetzner Cloud \texttt{ccx23} (4 dedicated \acs{AMD} \acs{EPYC} vCPUs, 16\,\acs{GB} \acs{RAM}, 160\,\acs{GB} \acs{NVMe}) to give the kubeadm control plane, the kube-prometheus-stack observability stack, the SpinOperator, and the unlimited-mode scaling experiment comfortable headroom on a single node. kubeadm uses containerd~2.x as its \acs{CRI}, which is necessary for the \texttt{RuntimeClass}/SpinKube integration~\cite{spinkube2024, runwasi2024}. Flannel provides the pod-network \acs{CNI}~\cite{flannel2024} and Rancher's \texttt{local-path-provisioner} provides the default \texttt{StorageClass} for the Prometheus \acs{PVC}.
+\end{sloppypar}
 
+\begin{sloppypar}
 The \acs{Wasm} \texttt{RuntimeClass} (\texttt{wasmtime-spin}) routes pods to \texttt{containerd-shim-spin-v2}~v0.17.0, which embeds Spin and Wasmtime/Cranelift internally to execute \acs{WASI}~P2 components. Docker pods use the default \texttt{runc} path unchanged. This hybrid configuration allows both paradigms to run side-by-side with directly comparable \acs{K8s} resource management.
+\end{sloppypar}
 
 \section{Benchmark Workload Design}
 \label{sec:workload_design}
 
 \subsection{Sieve of Eratosthenes as the Compute Benchmark}
 
-The first benchmark workload is a stateless \acs{HTTP} service that computes prime numbers using the Sieve of Eratosthenes algorithm. The sieve was selected as the opening benchmark for several reasons. It is purely \acs{CPU}-bound with no external I/O, database calls, or file system access, isolating compute performance from I/O stack differences between the variants. Its $O(N \log \log N)$ time complexity produces a predictable, parametrically controllable workload: the upper bound $N$ can be adjusted to modulate per-request computation time precisely. The algorithm is deterministic and trivially re-implementable in any language, ensuring that all six variants compute identical results using the same algorithmic logic.
+The first benchmark workload is a stateless \acs{HTTP} service that computes prime numbers using the Sieve of Eratosthenes algorithm. The sieve was selected as the opening benchmark for several reasons. It is purely \acs{CPU}-bound with no external I/O, database calls, or file system access, isolating compute performance from I/O stack differences between the variants. Its $O(N \log \log N)$ time complexity produces a predictable, parametrically controllable workload: the upper bound $N$ can be adjusted to modulate per-request computation time precisely. The algorithm is deterministic and trivially re-implementable in any language, ensuring that all four variants compute identical results using the same algorithmic logic.
 
-The \acs{HTTP} \acs{API} contract is identical across all six variants:
+The \acs{HTTP} \acs{API} contract is identical across all four variants:
 
 \begin{verbatim}
 GET /prime?limit=N&no_list=1
@@ -65,7 +87,9 @@ The response is a \acs{JSON} object:
 {"runtime":"<variant>","limit":N,"count":K,"elapsed_us":T}
 \end{verbatim}
 
+\begin{sloppypar}
 The \texttt{no\_list=1} parameter suppresses the array of computed primes from the response body, eliminating \acs{JSON} serialization overhead as a confounding variable when measuring throughput. The \texttt{elapsed\_us} field records the server-side wall-clock time of the sieve computation in microseconds, providing a direct measurement of per-request algorithmic cost independent of network and queuing latency.
+\end{sloppypar}
 
 Table~\ref{tab:variant_summary} summarizes the four primary implementation variants.
 
@@ -89,9 +113,11 @@ Table~\ref{tab:variant_summary} summarizes the four primary implementation varia
 \subsection{Memory-Bandwidth Benchmark}
 \label{sec:memory_bandwidth_workload}
 
-The second benchmark workload is a stateless \acs{HTTP} service that allocates an in-memory buffer of configurable size, fills it with deterministic bytes, computes its \acs{SHA}-256 hash, and returns the hash and elapsed time. This workload was designed to contrast with the \acs{CPU}-bound prime sieve by stressing memory-allocation patterns and the runtime's ability to handle repeated large-heap operations.
+The second benchmark workload is a stateless \acs{HTTP} service that allocates an in-memory buffer of configurable size, fills it with deterministic bytes, computes its \acs{SHA}-256 hash~\cite{nist2015fips180}, and returns the hash and elapsed time. This workload was designed to contrast with the \acs{CPU}-bound prime sieve by stressing memory-allocation patterns and the runtime's ability to handle repeated large-heap operations.
 
-\textit{Note on filesystem I/O:} The original design called for writing to and reading from a temporary file. However, SpinKube's Wasmtime host exposes \texttt{wasi:filesystem} access only to explicitly declared directories in \texttt{spin.toml}; ephemeral \texttt{/tmp} writes are not available in the default SpinApp sandbox. The in-memory buffer approach provides an equivalent memory-pressure workload that is consistent across all four variants (Docker variants perform the same in-memory computation without filesystem involvement), preserving the fairness of the comparison.
+\begin{sloppypar}
+\textit{Note on filesystem I/O:} The original design called for writing to and reading from a temporary file. However, SpinKube's Wasmtime host exposes \texttt{wasi:filesystem} access only to explicitly declared directories in \texttt{spin.toml}. Ephemeral \texttt{/tmp} writes are not available in the default SpinApp sandbox. The in-memory buffer approach provides an equivalent memory-pressure workload that is consistent across all four variants (Docker variants perform the same in-memory computation without filesystem involvement), preserving the fairness of the comparison.
+\end{sloppypar}
 
 The \acs{HTTP} \acs{API} contract is identical across all four variants:
 
@@ -104,12 +130,16 @@ The response is a \acs{JSON} object:
 {"runtime":"<variant>","size_kb":N,"sha256":"<hex>","elapsed_us":T}
 \end{verbatim}
 
-The \texttt{no\_hash=1} parameter suppresses the hash computation (returning an empty string), enabling measurement of raw allocation overhead independently of hashing time. Default \texttt{size\_kb=64}; maximum \texttt{size\_kb=10240}. The benchmark uses \texttt{size\_kb=64} for load testing and \texttt{size\_kb=1024} for stress testing large-allocation behaviour.
+\begin{sloppypar}
+The \texttt{no\_hash=1} parameter suppresses the hash computation (returning an empty string), enabling measurement of raw allocation overhead independently of hashing time. The default is \texttt{size\_kb=64} and the maximum is \texttt{size\_kb=10240}. The benchmark uses \texttt{size\_kb=64} for load testing and \texttt{size\_kb=1024} for stress testing large-allocation behaviour.
+\end{sloppypar}
 
 \subsection{HTTP Fan-out Benchmark (I/O-Bound)}
 \label{sec:http_fanout_workload}
 
-The third benchmark workload is the \textit{I/O-bound} counterpart promised in the task description. Each variant exposes an \acs{HTTP} service that, on every inbound request, dispatches $N$ concurrent outbound \acs{HTTP} GETs to an in-cluster delay-injecting backend pod (\texttt{io-echo}) and aggregates the responses. The backend sleeps for \texttt{delay\_ms} before responding, so per-request latency is dominated by outbound I/O wait rather than \acs{CPU} work --- the workload is I/O-bound by construction. The \texttt{io-echo} pod is intentionally \textit{not} part of the comparison matrix; it is a stable I/O target whose response delay and payload size are tunable parameters, turning variation in the inbound-side measurements into a runtime-and-language signal rather than backend noise.
+\begin{sloppypar}
+The third benchmark workload is the \textit{I/O-bound} counterpart. Each variant exposes an \acs{HTTP} service that, on every inbound request, dispatches $N$ concurrent outbound \acs{HTTP} GETs to an in-cluster delay-injecting backend pod (\texttt{io-echo}) and aggregates the responses. The backend sleeps for \texttt{delay\_ms} before responding, so per-request latency is dominated by outbound I/O wait rather than \acs{CPU} work --- the workload is I/O-bound by construction. The \texttt{io-echo} pod is intentionally \textit{not} part of the comparison matrix. It is a stable I/O target whose response delay and payload size are tunable parameters, turning variation in the inbound-side measurements into a runtime-and-language signal rather than backend noise.
+\end{sloppypar}
 
 The \acs{HTTP} \acs{API} contract is identical across all four variants:
 
@@ -123,11 +153,17 @@ The response is a \acs{JSON} object:
  "ok_count":K,"err_count":E,"elapsed_us":T,"responses":[...]}
 \end{verbatim}
 
+\begin{sloppypar}
 Defaults: \texttt{n=5}, \texttt{delay\_ms=50}, \texttt{no\_list=1} during load tests (the \texttt{responses} array is omitted to eliminate response-serialization overhead as a confounding variable). The \texttt{elapsed\_us} field measures wall-clock time from the first outbound dispatch through the last response, excluding inbound \acs{HTTP} framing.
+\end{sloppypar}
 
-\textit{Concurrency model per variant.} The wasm-rust variant fans out concurrently via \texttt{spin\_sdk::http::send} composed with \texttt{futures::future::join\_all}; docker-rust uses \texttt{reqwest::Client} with the same \texttt{join\_all} pattern; docker-golang uses \texttt{net/http} with \texttt{sync.WaitGroup} over goroutines. The wasm-tinygo variant, however, dispatches the $N$ outbound \acs{HTTP} GETs \textit{sequentially}: TinyGo's wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()} (nil-pointer dereference in the goroutine scheduler), and \texttt{spinhttp.Send} itself is blocking per call. This asymmetry --- three variants can fan out concurrently but the fourth cannot under WASI~P1 --- is itself a thesis-relevant observation about the maturity of the Wasm side for I/O-heavy workloads (see Section~\ref{sec:discussion_fanout}).
+\begin{sloppypar}
+\textit{Concurrency model per variant.} The wasm-rust variant fans out concurrently via \texttt{spin\_sdk::http::send} composed with \texttt{futures::future::join\_all}. The docker-rust variant uses \texttt{reqwest::Client} with the same \texttt{join\_all} pattern. The docker-golang variant uses \texttt{net/http} with \texttt{sync.WaitGroup} over goroutines. The wasm-tinygo variant, however, dispatches the $N$ outbound \acs{HTTP} GETs \textit{sequentially}: TinyGo's wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()} (nil-pointer dereference in the goroutine scheduler), and \texttt{spinhttp.Send} itself is blocking per call. This asymmetry --- three variants can fan out concurrently but the fourth cannot under WASI~P1 --- is itself a thesis-relevant observation about the maturity of the Wasm side for I/O-heavy workloads (see Section~\ref{sec:discussion_fanout}).
+\end{sloppypar}
 
+\begin{sloppypar}
 The Spin variants gate outbound \acs{HTTP} via \texttt{allowed\_outbound\_hosts~=~[\textquotedbl http://io-echo.http-fanout.svc.cluster.local:80\textquotedbl ]} in \texttt{spin.toml}, reflecting Spin's idiomatic deny-by-default capability model. The same gating is unavailable on the Docker side, which is itself a security-posture qualitative observation (Chapter~\ref{chap:discussion}).
+\end{sloppypar}
 
 \subsection{JSON Round-trip Benchmark (Serialization + Allocator)}
 \label{sec:json_roundtrip_workload}
@@ -142,31 +178,29 @@ Content-Type: application/json
 Body: [a, b, c, ...]  (array of N integers)
 \end{verbatim}
 
+\begin{sloppypar}
 The response is a \acs{JSON} object containing \texttt{runtime}, \texttt{n}, \texttt{count}, \texttt{sum}, \texttt{min}, \texttt{max}, \texttt{mean}, \texttt{median}, \texttt{stdev}, \texttt{elapsed\_us}, and optionally the \texttt{sorted} array (suppressed when \texttt{no\_list=1}). The median is defined identically across all four variants as $\mathrm{arr}[\lfloor(n-1)/2\rfloor]$ after a descending sort (mid-low for even~$N$) so that the four variants produce bit-identical numeric outputs --- without this constraint the four standard-library implementations would diverge.
+\end{sloppypar}
 
+\begin{sloppypar}
 Unlike the prior three benchmarks, the 04~load profile uses a \textit{request-body-size sweep}: $N$ is varied across $\{100, 1000, 10\,000, 100\,000\}$ in a single experiment, with one k6 invocation per $(\text{variant}, N)$ cell. This sweep exposes three runtime axes simultaneously: the per-byte cost of the host-to-guest \acs{HTTP}-body copy across the \acs{WASI}~P2 boundary (a Wasm-specific cost that grows with body size), the allocator's behaviour under churn from many small irregular \acs{JSON} objects, and the serializer/deserializer hot path itself (\texttt{serde\_json} in Rust, \texttt{encoding/json} in Go and TinyGo). The result is a per-variant throughput-vs-$N$ curve (the \texttt{n\_sweep.png} panel) rather than the single bar produced by the other three benchmarks.
-
-\subsection{Planned Future Workloads}
-
-\begin{itemize}
-    \item \textbf{Volta Financial Risk Engine:} A distributed multi-service application implementing a Monte Carlo simulation for Value at Risk (\acs{VaR}) calculations on trading portfolios. Volta consists of multiple communicating microservices, stress-testing \acs{Wasm}'s suitability for realistic, stateful, inter-service architectures of the type that dominate modern cloud deployments.
-\end{itemize}
+\end{sloppypar}
 
 \section{Definition of Metrics}
 \label{sec:metrics}
 
-Six metrics are measured across all variants. The first five are quantitative; the sixth is qualitative.
+Six metrics are measured across all variants. The first five are quantitative. The sixth is qualitative.
 
 \begin{enumerate}
-    \item \textbf{Startup Latency (Cold and Warm Start).} Time elapsed from \texttt{kubectl scale --replicas=0} followed by \texttt{kubectl scale --replicas=1} until the service returns the first \acs{HTTP}~200 response, measured by a polling script. This elapsed time includes the period required for the previous pod instance to terminate, plus any \acs{OCI} image pull time (for cold starts), plus runtime initialisation. Six measurement runs are performed per variant. Run~1 constitutes the \textit{cold start}: the node has no cached image layer, so the \acs{OCI} image is pulled from the registry before the pod can start; only the single observed value is reported for cold start. Runs~2--6 constitute \textit{warm starts}: the image is already cached on the node, so pod startup reflects only container/\acs{Wasm} runtime initialisation time; mean, median, and standard deviation are computed across these five warm-start runs. All latency values are expressed in milliseconds.
+    \item \begin{sloppypar}\textbf{Startup Latency (Cold and Warm Start).} Time elapsed from \texttt{kubectl scale --replicas=0} followed by \texttt{kubectl scale --replicas=1} until the service returns the first \acs{HTTP}~200 response, measured by a polling script. This elapsed time includes the period required for the previous pod instance to terminate, plus any \acs{OCI} image pull time (for cold starts), plus runtime initialisation. Six measurement runs are performed per variant. Run~1 constitutes the \textit{cold start}: the node has no cached image layer, so the \acs{OCI} image is pulled from the registry before the pod can start. Only the single observed value is reported for cold start. Runs~2--6 constitute \textit{warm starts}: the image is already cached on the node, so pod startup reflects only container/\acs{Wasm} runtime initialisation time. Mean, median, and standard deviation are computed across these five warm-start runs. All latency values are expressed in milliseconds.\end{sloppypar}
 
-    \item \textbf{Memory Footprint.} \acl{RSS} (\acs{RSS}) is the portion of a process's memory held in physical \acs{RAM} at a given point in time; it excludes memory swapped to disk and memory-mapped files that are not currently resident, making it the most practical measure of the \acs{RAM} a running service occupies on a production node. \acs{RSS} is reported by Prometheus~\cite{prometheus2024cncf} via the \texttt{container\_memory\_rss} metric, collected at two operating points: \textit{idle} (pod running for 60\,s with no incoming requests) and \textit{peak} (maximum \acs{RSS} observed during the k6 load test window). Scrape interval: 5\,s. Units: megabytes.
+    \item \begin{sloppypar}\textbf{Memory Footprint.} \acl{RSS} (\acs{RSS}) is the portion of a process's memory held in physical \acs{RAM} at a given point in time. It excludes memory swapped to disk and memory-mapped files that are not currently resident, making it the most practical measure of the \acs{RAM} a running service occupies on a production node. \acs{RSS} is reported by Prometheus~\cite{prometheus2024cncf} via the \texttt{container\_memory\_rss} metric, collected at two operating points: \textit{idle} (pod running for 60\,s with no incoming requests) and \textit{peak} (maximum \acs{RSS} observed during the k6 load test window). Scrape interval: 5\,s. Units: megabytes.\end{sloppypar}
 
-    \item \textbf{OCI Artifact Size.} The on-disk size of the \acs{OCI} image as reported by \texttt{docker~inspect}. This metric directly impacts image pull latency, registry storage costs, and cold-start time when images are not cached. Units: megabytes.
+    \item \begin{sloppypar}\textbf{OCI Artifact Size.} The on-disk size of the \acs{OCI} image as reported by \texttt{docker~inspect}. This metric directly impacts image pull latency, registry storage costs, and cold-start time when images are not cached. Units: megabytes.\end{sloppypar}
 
-    \item \textbf{Binary Artefact Size.} The on-disk size of the raw compiled code alone, isolated from the \acs{OCI} container packaging. For the Spin variants this is the \texttt{.wasm} file pushed via \texttt{spin~registry~push}; for the Docker variants this is the stripped, statically-linked binary extracted from the scratch image via \texttt{docker~cp}. Distinct from the \acs{OCI} image size: a Docker scratch image is the binary plus \texttt{ca-certificates.crt} plus image-manifest metadata ($\sim$0.2--0.6\,\acs{MB} of overhead), and a Spin \acs{OCI} artefact is the \texttt{.wasm} plus a small Spin manifest layer. Reporting both metrics side by side makes the cross-runtime size comparison apples-to-apples: \texttt{binary\_size} answers ``how large is the compiled code?'' and \texttt{image\_size} answers ``how large is what gets stored in the registry?''. Units: megabytes.
+    \item \begin{sloppypar}\textbf{Binary Artefact Size.} The on-disk size of the raw compiled code alone, isolated from the \acs{OCI} container packaging. For the Spin variants this is the \texttt{.wasm} file pushed via \texttt{spin~registry~push}. For the Docker variants this is the stripped, statically-linked binary extracted from the scratch image via \texttt{docker~cp}. Distinct from the \acs{OCI} image size: a Docker scratch image is the binary plus \texttt{ca-certificates.crt} plus image-manifest metadata ($\sim$0.2--0.6\,\acs{MB} of overhead), and a Spin \acs{OCI} artefact is the \texttt{.wasm} plus a small Spin manifest layer. Reporting both metrics side by side makes the cross-runtime size comparison apples-to-apples: \texttt{binary\_size} answers ``how large is the compiled code?'' and \texttt{image\_size} answers ``how large is what gets stored in the registry?''. Units: megabytes.\end{sloppypar}
 
-    \item \textbf{Throughput and Latency Under Load.} Load testing is performed with k6~\cite{k6io2024grafana} using a ramping-\acs{VU} executor. k6 models load using \acpl{VU}: each \acs{VU} is an independent simulated client that continuously sends requests to the target service for the duration of its active phase, waiting for a response before issuing the next request; the ramp-up phase gradually increases concurrency to avoid an instantaneous spike that would distort latency measurements. The load profile ramps from 1~\acs{VU} linearly to 50~\acp{VU} over 20\,s, holds at 50~\acp{VU} for 60\,s, then ramps down to 0 over 10\,s. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: requests per second (\acs{RPS}), \acs{HTTP} request failure rate (fraction of non-2xx responses), p50/p95/p99 end-to-end latency, and the custom \texttt{server\_compute\_us} metric extracted from the \acs{JSON} response body to measure server-side algorithm time independently of network and queuing effects.
+    \item \begin{sloppypar}\textbf{Throughput and Latency Under Load.} Load testing is performed with k6~\cite{k6io2024grafana} using a ramping virtual-user (\acs{VU}) executor. k6 models load using \acp{VU}~\cite{k6io2024grafana}: each \acs{VU} is an independent simulated client that continuously sends requests to the target service for the duration of its active phase, waiting for a response before issuing the next request~\cite{k6io2024grafana}. The ramp-up phase gradually increases concurrency to avoid an instantaneous spike that would distort latency measurements. The load profile ramps from 1~\acs{VU} linearly to 50~\acp{VU} over 20\,s, holds at 50~\acp{VU} for 60\,s, then ramps down to 0 over 10\,s. All requests target \texttt{GET /prime?limit=100000\&no\_list=1}. Primary metrics: requests per second (\acs{RPS}), \acs{HTTP} request failure rate (fraction of non-2xx responses), p50/p95/p99 end-to-end latency, and the custom \texttt{server\_compute\_us} metric extracted from the \acs{JSON} response body to measure server-side algorithm time independently of network and queuing effects.\end{sloppypar}
 
     \item \textbf{Developer Experience (Qualitative).} A structured narrative assessment of the engineering effort required to build, test, and deploy each variant. Four dimensions are evaluated using a four-point friction scale (Low / Medium / High / Very~High): (a) toolchain setup and installation, (b) dependency compatibility under \acs{WASI} (Preview~1 and Preview~2), (c) \acs{K8s} cluster integration complexity, and (d) debugging and observability capability. This assessment is presented in \hyperref[chap:evaluation]{Chapter~\ref{chap:evaluation}} and directly addresses \acs{RQ4}.
 \end{enumerate}

@@ -11,42 +11,52 @@ The primary goal of the experimental infrastructure is measurement \textit{isola
 \begin{itemize}
     \item \textbf{Local Minikube:} Runs a \acs{K8s} cluster inside a \acs{VM} on the developer's laptop. Background processes (browser, IDE, system updates) compete for \acs{CPU} and memory, making benchmark results unreproducible across sessions. Additionally, consumer laptop \acs{CPU} governors apply dynamic frequency scaling under load, introducing measurement variance.
     \item \textbf{k3d (K3s in Docker):} Runs a K3s cluster inside Docker containers on the local machine. This introduces multiple hypervisor/container nesting layers---host \acs{OS} $\to$ Docker $\to$ K3s $\to$ containerd $\to$ \acs{Wasm} runtime---that obscure the runtime overhead being measured and complicate the registration of the SpinKube containerd shim.
-    \item \textbf{Managed Cloud \acs{K8s} (EKS, GKE, AKS):} Managed \acs{K8s} offerings do not support custom \acs{OCI} runtimes or \texttt{RuntimeClass} with non-standard shims out of the box. Adding SpinKube (\texttt{containerd-shim-spin-v2}) support requires custom node groups or operator-managed DaemonSets, adding abstraction layers that complicate fair comparison.
+    \item \begin{sloppypar}\textbf{Managed Cloud \acs{K8s} (EKS, GKE, AKS):} Managed \acs{K8s} offerings do not support custom \acs{OCI} runtimes or \texttt{RuntimeClass} with non-standard shims out of the box. Adding SpinKube (\texttt{containerd-shim-spin-v2}) support requires custom node groups or operator-managed DaemonSets, adding abstraction layers that complicate fair comparison.\end{sloppypar}
 \end{itemize}
 
-A dedicated Hetzner Cloud \acs{VM} provides a single-purpose environment with no competing workloads, full control over kernel configuration and containerd setup, and complete reproducibility via \ac{IaC}~\cite{terraform2024hashicorp}; the provisioning Terraform modules and cloud-init bootstrap scripts are published as the \texttt{thesis-infra-setup} repository~\cite{musaev2026thesisinfra}. The Hetzner ccx-series \acs{CPU} type is a dedicated-vCPU instance family; occasional noisy-neighbour effects from co-located tenants on the underlying host may still introduce outliers in absolute metric values. This is mitigated by repeating measurements across multiple runs and reporting means and standard deviations.
+\begin{sloppypar}
+A dedicated Hetzner Cloud \acs{VM} provides a single-purpose environment with no competing workloads, full control over kernel configuration and containerd setup, and complete reproducibility via \ac{IaC}~\cite{terraform2024hashicorp}. The provisioning Terraform modules and cloud-init bootstrap scripts are published as the \texttt{thesis-infra-setup} repository~\cite{musaev2026thesisinfra}. The Hetzner ccx-series \acs{CPU} type is a dedicated-vCPU instance family. Occasional noisy-neighbour effects from co-located tenants on the underlying host may still introduce outliers in absolute metric values. This effect is mitigated by repeating measurements across multiple runs and reporting means and standard deviations.
+\end{sloppypar}
 
 \section{Infrastructure Setup}
 \label{sec:infra_setup}
 
 \subsection{Hardware and Kubernetes Distribution}
 
-The benchmark cluster runs on a Hetzner Cloud ccx23 instance~\cite{hetzner2024cloud}. Hetzner Online GmbH is a German cloud and hosting provider offering cost-efficient dedicated and shared virtual machines in European data centers; the ccx23 is a dedicated-\acs{CPU} instance type with four \acs{AMD} EPYC vCPUs, 16\,GB \acs{RAM}, 160\,GB NVMe \acs{SSD}, running Ubuntu~24.04~LTS in the Nuremberg~(nbg1) datacenter. The entire server provisioning is defined in Terraform~\cite{terraform2024hashicorp}---an open-source \acl{IaC} tool that declaratively manages cloud resources---and executed with a single \texttt{make up} command.
+\begin{sloppypar}
+The benchmark cluster runs on a Hetzner Cloud ccx23 instance~\cite{hetzner2024cloud}. Hetzner Online GmbH is a German cloud and hosting provider offering cost-efficient dedicated and shared virtual machines in European data centers. The ccx23 is a dedicated-\acs{CPU} instance type with four \acs{AMD} EPYC vCPUs, 16\,GB \acs{RAM}, 160\,GB NVMe \acs{SSD}, running Ubuntu~24.04~LTS in the Nuremberg~(nbg1) datacenter. The entire server provisioning is defined in Terraform~\cite{terraform2024hashicorp}---an open-source \acl{IaC} tool that declaratively manages cloud resources---and executed with a single \texttt{make up} command.
+\end{sloppypar}
 
-Upstream Kubernetes v1.34, deployed via \texttt{kubeadm}, is installed as the \acs{K8s} distribution. \texttt{kubeadm} is the reference installer in the official Kubernetes documentation and is the foundation that managed services such as \acs{AWS} \acs{EKS}, Google \acs{GKE}, and Azure \acs{AKS} run underneath; using it removes distribution-specific confounds from the runtime comparison. The ccx23 sizing provides ample headroom above the combined footprint of the kubeadm control plane (apiserver, etcd, controller-manager, scheduler, kube-proxy), \texttt{cert-manager}, the SpinOperator, the kube-prometheus-stack observability stack, and the benchmark workload pods. Services are exposed via NodePort directly without an ingress controller, to avoid introducing an irrelevant processing layer between the load generator and the measured services. containerd~2.x is used as the \ac{CRI}---the standardized interface through which the kubelet communicates with the container runtime to manage pod lifecycles---and Flannel provides the pod-network \acs{CNI}.
+\begin{sloppypar}
+Upstream Kubernetes v1.34, deployed via \texttt{kubeadm}, is installed as the \acs{K8s} distribution. \texttt{kubeadm} is the reference installer in the official Kubernetes documentation~\cite{k8s2024architecture} and is the foundation that managed services such as \acs{AWS} \acs{EKS}, Google \acs{GKE}, and Azure \acs{AKS} run underneath~\cite{k8s2024architecture}. Using it removes distribution-specific confounds from the runtime comparison. The ccx23 sizing provides ample headroom above the combined footprint of the kubeadm control plane (apiserver, etcd, controller-manager, scheduler, kube-proxy), \texttt{cert-manager}, the SpinOperator, the kube-prometheus-stack observability stack, and the benchmark workload pods. Services are exposed via NodePort directly without an ingress controller, to avoid introducing an irrelevant processing layer between the load generator and the measured services. containerd~2.x is used as the \ac{CRI}---the standardized interface through which the kubelet communicates with the container runtime to manage pod lifecycles~\cite{k8s2024architecture, runwasi2024}. Flannel provides the pod-network \acs{CNI}~\cite{flannel2024}.
+\end{sloppypar}
 
 \subsection{The SpinKube Runtime Chain}
 
 Running \acs{Wasm} pods alongside standard \acs{OCI} pods requires configuring containerd to route \acs{Wasm} workloads through a different \acs{OCI} runtime. The full SpinKube chain is:
 
 \begin{center}
+\begin{sloppypar}
 \texttt{kubelet} $\to$ \texttt{containerd} $\to$ \texttt{containerd-shim-spin-v2} $\to$ \textbf{Wasmtime/Cranelift} $\to$ \texttt{.wasm component}
+\end{sloppypar}
 \end{center}
 
 The key components in this chain are:
 
 \begin{itemize}
-    \item \textbf{containerd-shim-spin-v2~v0.17.0:} A containerd shim that implements the containerd shim v2 protocol and embeds Fermyon Spin (which embeds Wasmtime/Cranelift) internally. It does \textit{not} use crun or runc; the shim is the direct process host for the \acs{Wasm} component. Installed from the SpinKube GitHub release as a static binary at \texttt{/usr/local/bin/containerd-shim-spin-v2}.
-    \item \textbf{containerd plugin entry:} The containerd configuration registers a \texttt{spin} runtime plugin with \texttt{runtime\_type = 'io.containerd.spin.v2'}. This is always active; no pod annotations are required.
-    \item \textbf{SpinOperator (v0.6.1):} A Kubernetes operator (CNCF Sandbox) that watches \texttt{SpinApp} \acs{CRD} resources and creates managed \texttt{Deployments} with \texttt{runtimeClassName: wasmtime-spin}. cert-manager~v1.16.3 is a prerequisite for the operator's admission webhook.
-    \item \textbf{Wasmtime/Cranelift:} The \acs{JIT} engine embedded inside Spin. All \acs{WASI}~P2 component execution uses Wasmtime with the Cranelift \acs{JIT} backend.
+    \item \begin{sloppypar}\textbf{containerd-shim-spin-v2~v0.17.0:} A containerd shim that implements the containerd shim v2 protocol and embeds Fermyon Spin (which embeds Wasmtime/Cranelift) internally~\cite{spinkube2024, runwasi2024}. It does \textit{not} use crun or runc. The shim is the direct process host for the \acs{Wasm} component. Installed from the SpinKube GitHub release as a static binary at \texttt{/usr/local/bin/containerd-shim-spin-v2}.\end{sloppypar}
+    \item \begin{sloppypar}\textbf{containerd plugin entry:} The containerd configuration registers a \texttt{spin} runtime plugin with \texttt{runtime\_type = 'io.containerd.spin.v2'}. This is always active and no pod annotations are required.\end{sloppypar}
+    \item \begin{sloppypar}\textbf{SpinOperator (v0.6.1):} A Kubernetes operator (CNCF Sandbox) that watches \texttt{SpinApp} \acs{CRD} resources and creates managed \texttt{Deployments} with \texttt{runtimeClassName: wasmtime-spin}. cert-manager~v1.16.3 is a prerequisite for the operator's admission webhook.\end{sloppypar}
+    \item \textbf{Wasmtime/Cranelift:} The \acs{JIT} engine embedded inside Spin~\cite{bytecodealliance2024wasmtime, fermyon2024spin}. All \acs{WASI}~P2 component execution uses Wasmtime with the Cranelift \acs{JIT} backend.
 \end{itemize}
 
 \subsection{Observability Stack}
 
-Observability refers to the ability to infer the internal state of a system from its external outputs---primarily metrics, logs, and traces. In this experimental context, observability is required to collect the quantitative performance metrics defined in Chapter~\ref{chap:methodology} (memory, \acs{CPU}, request latency, and throughput) from all six variants simultaneously and under identical conditions.
+Observability refers to the ability to infer the internal state of a system from its external outputs---primarily metrics, logs, and traces. In this experimental context, observability is required to collect the quantitative performance metrics defined in Chapter~\ref{chap:methodology} (memory, \acs{CPU}, request latency, and throughput) from all four variants simultaneously and under identical conditions.
 
-The \texttt{kube-prometheus-stack} Helm chart is deployed into the \texttt{observability} namespace, providing Prometheus~\cite{prometheus2024cncf} (NodePort~32090, 5\,s scrape interval, 7-day retention, 10\,Gi \acs{PVC}) and Grafana (NodePort~32000). A 5-second scrape interval was chosen to capture sub-second metric resolution during the 60-second k6 load window. Node Exporter provides host-level \acs{CPU} and memory metrics; the \texttt{cAdvisor} integration in containerd exposes per-container \texttt{container\_memory\_rss} and \texttt{container\_cpu\_usage\_seconds\_total} metrics.
+\begin{sloppypar}
+The \texttt{kube-prometheus-stack} Helm chart is deployed into the \texttt{observability} namespace, providing Prometheus~\cite{prometheus2024cncf} (NodePort~32090, 5\,s scrape interval, 7-day retention, 10\,Gi \acs{PVC}) and Grafana (NodePort~32000). A 5-second scrape interval was chosen to capture sub-second metric resolution during the 60-second k6 load window. Node Exporter provides host-level \acs{CPU} and memory metrics. The \texttt{cAdvisor} integration in containerd exposes per-container \texttt{container\_memory\_rss} and \texttt{container\_cpu\_usage\_seconds\_total} metrics~\cite{google2024cadvisor}.
+\end{sloppypar}
 
 \subsection{Infrastructure as Code}
 
@@ -54,42 +64,56 @@ The entire environment is described declaratively:
 
 \begin{itemize}
     \item \textbf{Terraform} provisions the Hetzner Cloud firewall (restricting \acs{SSH} and \acs{K8s} \acs{API} access to the operator's \acs{IP}) and the ccx23 \acs{VM}.
-    \item \textbf{cloud-init} installs containerd~2.x, \texttt{kubeadm}/\texttt{kubelet}/\texttt{kubectl} (v1.34), runs \texttt{kubeadm init}, installs the Flannel \acs{CNI} and \texttt{local-path-provisioner}, untaints the control-plane node, and installs \texttt{containerd-shim-spin-v2}. The complete environment, from bare cloud \acs{VM} to a functioning SpinKube-enabled \acs{K8s} cluster with observability, is bootstrapped with \texttt{make up \&\& make configure \&\& make deploy}.
+    \item \begin{sloppypar}\textbf{cloud-init} installs containerd~2.x, \texttt{kubeadm}/\texttt{kubelet}/\texttt{kubectl} (v1.34), runs \texttt{kubeadm init}, installs the Flannel \acs{CNI} and \texttt{local-path-provisioner}, untaints the control-plane node, and installs \texttt{containerd-shim-spin-v2}. The complete environment, from bare cloud \acs{VM} to a functioning SpinKube-enabled \acs{K8s} cluster with observability, is bootstrapped with \texttt{make up \&\& make configure \&\& make deploy}.\end{sloppypar}
 \end{itemize}
 
 \section{Reference Workload: Sieve of Eratosthenes}
 \label{sec:reference_workload}
 
-The Sieve of Eratosthenes is a classical algorithm for finding all prime numbers up to a given limit $N$. The implementation marks composite numbers by iterating through multiples of each discovered prime, completing in $O(N \log \log N)$ time with $O(N)$ space. All six variants implement the identical algorithmic logic; the only differences are the \acs{HTTP} framework and I/O model.
+The Sieve of Eratosthenes is a classical algorithm for finding all prime numbers up to a given limit $N$. The implementation marks composite numbers by iterating through multiples of each discovered prime, completing in $O(N \log \log N)$ time with $O(N)$ space. All four variants implement the identical algorithmic logic. The only differences are the \acs{HTTP} framework and I/O model.
 
 The \acs{HTTP} \acs{API} is:
 \begin{verbatim}
 GET /prime?limit=N&no_list=1
 \end{verbatim}
+\begin{sloppypar}
 where \texttt{limit} is capped at 10,000,000 across all variants. The \acs{JSON} response contains the fields \texttt{runtime}, \texttt{limit}, \texttt{count}, and \texttt{elapsed\_us}. The \texttt{elapsed\_us} field measures only the sieve computation, not network or serialization time. The \texttt{no\_list} flag suppresses the array of prime numbers, ensuring that \acs{JSON} encoding time does not confound throughput measurements.
+\end{sloppypar}
 
+\begin{sloppypar}
 Each variant also exposes \texttt{GET /health} returning \acs{HTTP}~200, used for \acs{K8s} liveness and readiness probes.
+\end{sloppypar}
 
 \section{Docker/Golang Implementation}
 \label{sec:impl_docker_golang}
 
-The docker-golang service uses Go~1.26 and the \texttt{net/http} standard library. The server is started with \texttt{http.ListenAndServe(":8080", mux)}, which creates one goroutine per accepted connection. Go's M:N scheduler multiplexes goroutines onto \acs{OS} threads, enabling concurrent request handling without explicit thread management. The sieve computation and \acs{JSON} marshaling use only standard library packages (\texttt{encoding/json}), resulting in zero external dependencies.
+\begin{sloppypar}
+The docker-golang service uses Go~1.26 and the \texttt{net/http} standard library. The server is started with \texttt{http.ListenAndServe(":8080", mux)}, which creates one goroutine per accepted connection. Go's M:N scheduler multiplexes goroutines onto \acs{OS} threads, enabling concurrent request handling without explicit thread management~\cite{go2024effective}. The sieve computation and \acs{JSON} marshaling use only standard library packages (\texttt{encoding/json}), resulting in zero external dependencies.
+\end{sloppypar}
 
-The Docker image uses a two-stage build: a \texttt{golang:1.26-alpine} builder stage compiles a fully static binary with \texttt{CGO\_ENABLED=0 GOOS=linux}, and a \texttt{scratch} final stage contains only the binary. The resulting image is \textbf{6.00\,MB}, the largest of the Docker/\acs{WASI}~P1 variants due to Go's compiled-in runtime metadata (goroutine scheduler, garbage collector, standard library \acs{DWARF} symbols).
+\begin{sloppypar}
+The Docker image uses a two-stage build: a \texttt{golang:1.26-alpine} builder stage compiles a fully static binary with \texttt{CGO\_ENABLED=0 GOOS=linux}, and a \texttt{scratch} final stage contains only the binary. The resulting image is \textbf{6.00\,MB}, the largest of the four primary variants due to Go's compiled-in runtime metadata (goroutine scheduler, garbage collector, standard library \acs{DWARF} symbols).
+\end{sloppypar}
 
 \section{Docker/Rust Implementation}
 \label{sec:impl_docker_rust}
 
-The docker-rust service uses Rust~1.94 with the axum~0.8 web framework running on the Tokio async runtime. The \texttt{\#[tokio::main]} macro spawns a multi-threaded executor whose thread count equals the number of available \acs{CPU} cores. Axum's async handler model allows all 50 concurrent k6 \acp{VU} to be processed in parallel, with each handler awaiting the sieve computation in its own async task.
+\begin{sloppypar}
+The docker-rust service uses Rust~1.94 with the axum~0.8 web framework~\cite{axum2024} running on the Tokio async runtime~\cite{tokio2024runtime}. The \texttt{\#[tokio::main]} macro spawns a multi-threaded executor whose thread count equals the number of available \acs{CPU} cores~\cite{tokio2024runtime}. Axum's async handler model allows all 50 concurrent k6 \acp{VU} to be processed in parallel, with each handler awaiting the sieve computation in its own async task~\cite{axum2024}.
+\end{sloppypar}
 
+\begin{sloppypar}
 The Docker image uses a two-stage build: a \texttt{rust:1.94-slim} builder stage with \texttt{cargo build --release} (link-time optimisation enabled, \texttt{codegen-units=1}, \texttt{opt-level=3}, binary stripped), and a \texttt{scratch} final stage. The resulting image is \textbf{2.08\,MB}---3$\times$ smaller than docker-golang, reflecting Rust's lack of a garbage collector and the absence of any bundled runtime metadata.
+\end{sloppypar}
 
 \section{SpinKube/Rust Implementation}
 \label{sec:impl_spin_rust}
 
 \subsection{HTTP Handler via spin-sdk}
 
-The wasm-rust variant uses \texttt{spin-sdk~=~"5.2.0"}, the official Spin \acs{SDK} for Rust \acs{WASI}~P2 components. The \texttt{\#[http\_component]} procedural macro generates the \acs{WASI}~P2 \texttt{wasi:http/incoming-handler} export automatically:
+\begin{sloppypar}
+The wasm-rust variant uses \texttt{spin-sdk~=~"5.2.0"}, the official Spin \acs{SDK} for Rust \acs{WASI}~P2 components~\cite{spinframework2024rust}. The \texttt{\#[http\_component]} procedural macro generates the \acs{WASI}~P2 \texttt{wasi:http/incoming-handler} export automatically~\cite{spinframework2024rust}:
+\end{sloppypar}
 
 \begin{verbatim}
 use spin_sdk::http::{IncomingRequest, Response};
@@ -105,22 +129,28 @@ fn handle(req: IncomingRequest) -> Response {
 }
 \end{verbatim}
 
-There is no \acs{TCP} socket management, no accept loop, and no custom \acs{HTTP} parsing. Spin's Wasmtime/Cranelift host handles all of that; the component receives a parsed \texttt{IncomingRequest} and returns a \texttt{Response}.
+\begin{sloppypar}
+There is no \acs{TCP} socket management, no accept loop, and no custom \acs{HTTP} parsing. Spin's Wasmtime/Cranelift host handles all of that. The component receives a parsed \texttt{IncomingRequest} and returns a \texttt{Response}.
+\end{sloppypar}
 
 \subsection{Build and Packaging}
 
+\begin{sloppypar}
 The component is built with \texttt{cargo component build --release} (from the \texttt{cargo-component} toolchain), which compiles to a \acs{WASI}~P2 component and runs \texttt{wasm-tools component link} to produce a self-contained \texttt{.wasm} file. The artifact is pushed to the registry as a Spin \acs{OCI} artifact---not a standard Docker image---using \texttt{spin registry push docker.io/abdulaziz7225/prime-sieve-wasm-rust:latest}. Spin \acs{OCI} artifacts use distinct media types (\texttt{application/vnd.fermyon.spin.manifest.v2+json}) that require \texttt{containerd-shim-spin-v2} to pull and execute correctly.
+\end{sloppypar}
 
-Concurrency is capped at the pod level: the limited-mode baseline runs the \texttt{SpinApp} with \texttt{spec.replicas:~1}, and each \acs{WASI}~P1/P2 component is architecturally single-threaded per Wasmtime instance, satisfying the resource-fairness requirement without any in-component setting. (Spin~2.x [\texttt{spin\_manifest\_version~=~2}] no longer accepts the legacy \texttt{max\_instances} field that earlier Spin 1.x versions exposed in \texttt{spin.toml}.) The compiled \texttt{.wasm} artifact is typically under 1\,MB stripped.
-
-Source: \texttt{wasm/rust/01-prime-sieve/}
+\begin{sloppypar}
+Concurrency is capped at the pod level: the limited-mode baseline runs the \texttt{SpinApp} with \texttt{spec.replicas:~1}, and each \acs{WASI}~P1/P2 component is architecturally single-threaded per Wasmtime instance~\cite{clark2019standardizing, clark2023preview2, bytecodealliance2024componentmodel}, satisfying the resource-fairness requirement without any in-component setting. (Spin~2.x [\texttt{spin\_manifest\_version~=~2}] no longer accepts the legacy \texttt{max\_instances} field that earlier Spin 1.x versions exposed in \texttt{spin.toml}.) The compiled \texttt{.wasm} artifact is typically under 1\,MB stripped.
+\end{sloppypar}
 
 \section{SpinKube/TinyGo Implementation}
 \label{sec:impl_spin_tinygo}
 
 \subsection{HTTP Handler via Spin Go SDK}
 
+\begin{sloppypar}
 The wasm-tinygo variant uses the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). The \texttt{spinhttp.Handle()} function registers the application's \acs{HTTP} handler via a \acs{CGo} layer that exports \texttt{fermyon:spin/inbound-http}, the interface Spin/Wasmtime dispatches \acs{HTTP} requests through. The handler receives standard \texttt{net/http.ResponseWriter} and \texttt{*http.Request} arguments:
+\end{sloppypar}
 
 \begin{verbatim}
 func init() {
@@ -134,7 +164,9 @@ func init() {
 func main() {}
 \end{verbatim}
 
-\textbf{No custom socket code is required.} No \texttt{//go:wasmimport} socket directives or custom \texttt{server.go} are needed. Note that \texttt{-target=wasip1} is used rather than \texttt{wasip2}: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}; the Spin Go \acs{SDK}'s \acs{CGo} layer provides the correct HTTP export instead. The handler logic is identical to the docker-golang handler, providing the closest possible Go-to-Go comparison.
+\begin{sloppypar}
+\textbf{No custom socket code is required.} No \texttt{//go:wasmimport} socket directives or custom \texttt{server.go} are needed. Note that \texttt{-target=wasip1} is used rather than \texttt{wasip2}: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK}'s \acs{CGo} layer provides the correct HTTP export instead. The handler logic is identical to the docker-golang handler, providing the closest possible Go-to-Go comparison.
+\end{sloppypar}
 
 \subsection{Build and Packaging}
 
@@ -142,27 +174,35 @@ The binary is compiled with:
 \begin{verbatim}
 tinygo build -target=wasip1 -gc=conservative -opt=2 -o app.wasm .
 \end{verbatim}
-The \texttt{-gc=conservative} flag is retained for stability. \texttt{-target=wasip1} is required: TinyGo's \texttt{wasip2} target hardwires \texttt{wasi:cli/command} and cannot export \texttt{wasi:http/incoming-handler}; the Spin Go \acs{SDK} exports \texttt{fermyon:spin/inbound-http} via its \acs{CGo} layer, which Spin accepts as an equivalent interface. The \texttt{.wasm} artifact is packaged as a Spin \acs{OCI} artifact using \texttt{spin registry push}. The limited-mode baseline runs the \texttt{SpinApp} with \texttt{spec.replicas:~1}; the \acs{WASI}~P1 component itself is single-threaded per Wasmtime instance, so no additional \texttt{spin.toml} concurrency setting is required (resource fairness).
-
-Source: \texttt{wasm/tinygo/01-prime-sieve/}
+\begin{sloppypar}
+The \texttt{-gc=conservative} flag is retained for stability. \texttt{-target=wasip1} is required: TinyGo's \texttt{wasip2} target hardwires \texttt{wasi:cli/command} and cannot export \texttt{wasi:http/incoming-handler}~\cite{tinygo2024, bytecodealliance2024componentmodel}. The Spin Go \acs{SDK} exports \texttt{fermyon:spin/inbound-http} via its \acs{CGo} layer~\cite{spinframework2024go}, which Spin accepts as an equivalent interface. The \texttt{.wasm} artifact is packaged as a Spin \acs{OCI} artifact using \texttt{spin registry push}. The limited-mode baseline runs the \texttt{SpinApp} with \texttt{spec.replicas:~1}. The \acs{WASI}~P1 component itself is single-threaded per Wasmtime instance, so no additional \texttt{spin.toml} concurrency setting is required (resource fairness).
+\end{sloppypar}
 
 \section{Memory-Bandwidth Workload Implementation}
 \label{sec:impl_membw}
 
-The second workload (Section~\ref{sec:memory_bandwidth_workload}) shares the same four-variant structure, build pipeline, and Spin packaging as the prime-sieve workload. Differences are confined to the handler body: in place of the sieve algorithm each handler allocates a heap buffer of \texttt{size\_kb~$\times$~1024} bytes, fills it with a deterministic byte pattern, optionally computes a \acs{SHA}-256 hash, and returns the hex digest with elapsed time. Hashing uses each platform's native crypto library (\texttt{sha2}~=~"0.10" with \texttt{hex}~=~"0.4" for the Rust variants; \texttt{crypto/sha256} from the standard library for the Go and TinyGo variants). The \acs{HTTP} dispatcher, the \texttt{SpinApp} \acs{CRD}, and the resource envelopes are identical to the prime-sieve namespace. Sources: \texttt{docker/rust/02-memory-bandwidth/}, \texttt{docker/golang/02-memory-bandwidth/}, \texttt{wasm/rust/02-memory-bandwidth/}, \texttt{wasm/tinygo/02-memory-bandwidth/}.
+\begin{sloppypar}
+The second workload (Section~\ref{sec:memory_bandwidth_workload}) shares the same four-variant structure, build pipeline, and Spin packaging as the prime-sieve workload. Differences are confined to the handler body: in place of the sieve algorithm each handler allocates a heap buffer of \texttt{size\_kb~$\times$~1024} bytes, fills it with a deterministic byte pattern, optionally computes a \acs{SHA}-256 hash, and returns the hex digest with elapsed time. Hashing uses each platform's native crypto library: \texttt{sha2}~=~"0.10" with \texttt{hex}~=~"0.4" for the Rust variants, and \texttt{crypto/sha256} from the standard library for the Go and TinyGo variants. The \acs{HTTP} dispatcher, the \texttt{SpinApp} \acs{CRD}, and the resource envelopes are identical to the prime-sieve namespace.
+\end{sloppypar}
 
 \section{HTTP Fan-out Workload Implementation (I/O-Bound)}
 \label{sec:impl_http_fanout}
 
+\begin{sloppypar}
 The third workload (Section~\ref{sec:http_fanout_workload}) is the I/O-bound counterpart of 01/02 and is the first workload to require \textit{outbound} \acs{HTTP} from each variant. The four implementations differ along their concurrency primitives and Spin requires explicit outbound-host gating in \texttt{spin.toml}.
+\end{sloppypar}
 
 \subsection{Per-variant outbound dispatch}
 
-The wasm-rust variant uses \texttt{spin\_sdk::http::send} composed with \texttt{futures::future::join\_all}; the docker-rust variant uses \texttt{reqwest::Client} with the same \texttt{join\_all} pattern over a tuned connection pool (\texttt{pool\_max\_idle\_per\_host~=~64}); the docker-golang variant uses \texttt{net/http} over a tuned \texttt{http.Transport} with \texttt{sync.WaitGroup} over goroutines. The wasm-tinygo variant dispatches sequentially via blocking \texttt{spinhttp.Send} calls because TinyGo's wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()} (nil-pointer dereference in the goroutine scheduler) --- the concurrent fan-out pattern that the other three variants share cannot be replicated on the \acs{WASI}~P1 + TinyGo cell today. The asymmetry is preserved in the experimental design rather than papered over because it itself is a thesis-relevant observation about the maturity of the Wasm side for I/O-heavy workloads (see Section~\ref{sec:discussion_fanout}).
+\begin{sloppypar}
+The wasm-rust variant uses \texttt{spin\_sdk::http::send} composed with \texttt{futures::future::join\_all}. The docker-rust variant uses \texttt{reqwest::Client} with the same \texttt{join\_all} pattern over a tuned connection pool (\texttt{pool\_max\_idle\_per\_host~=~64}). The docker-golang variant uses \texttt{net/http} over a tuned \texttt{http.Transport} with \texttt{sync.WaitGroup} over goroutines. The wasm-tinygo variant dispatches sequentially via blocking \texttt{spinhttp.Send} calls because TinyGo's wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()} (nil-pointer dereference in the goroutine scheduler) --- the concurrent fan-out pattern that the other three variants share cannot be replicated on the \acs{WASI}~P1 + TinyGo cell today. The asymmetry is preserved in the experimental design rather than papered over because it itself is a thesis-relevant observation about the maturity of the Wasm side for I/O-heavy workloads (see Section~\ref{sec:discussion_fanout}).
+\end{sloppypar}
 
 \subsection{Outbound capability gating in \texttt{spin.toml}}
 
+\begin{sloppypar}
 The two Spin variants restrict outbound \acs{HTTP} to a single backend host in \texttt{spin.toml}:
+\end{sloppypar}
 
 \begin{verbatim}
 [component.http-fanout]
@@ -171,17 +211,23 @@ allowed_outbound_hosts = [
 ]
 \end{verbatim}
 
+\begin{sloppypar}
 This deny-by-default capability declaration is Spin's idiomatic security posture for outbound network access. The Docker variants have no equivalent gating mechanism: \texttt{reqwest} and \texttt{net/http} dial arbitrary hosts at runtime, subject only to the cluster's \texttt{NetworkPolicy} layer (which is not configured in this experiment). The Spin posture is therefore strictly more restrictive in the default configuration --- a qualitative security observation revisited in Chapter~\ref{chap:discussion}.
+\end{sloppypar}
 
 \subsection{io-echo backend (the outbound HTTP target)}
 \label{sec:impl_io_echo}
 
-A small Go service named \texttt{io-echo} is deployed alongside the four fan-out variants in the \texttt{http-fanout} namespace. It exposes \texttt{GET /echo?delay\_ms=D\&size\_b=B}: sleeps for \texttt{delay\_ms} milliseconds and returns \texttt{size\_b} bytes of payload. The deployment runs a single replica, listens on a ClusterIP-only \texttt{Service} (\textit{no} \texttt{NodePort}), and is intentionally \textit{not} part of the comparison matrix. Holding the per-outbound delay and response size constant at the backend turns variation in the inbound-side throughput and latency measurements into a runtime-and-language signal rather than backend noise. Source: \texttt{backend/io-echo/}.
+\begin{sloppypar}
+A small Go service named \texttt{io-echo} is deployed alongside the four fan-out variants in the \texttt{http-fanout} namespace. It exposes \texttt{GET /echo?delay\_ms=D\&size\_b=B}: sleeps for \texttt{delay\_ms} milliseconds and returns \texttt{size\_b} bytes of payload. The deployment runs a single replica, listens on a ClusterIP-only \texttt{Service} (\textit{no} \texttt{NodePort}), and is intentionally \textit{not} part of the comparison matrix. Holding the per-outbound delay and response size constant at the backend turns variation in the inbound-side throughput and latency measurements into a runtime-and-language signal rather than backend noise.
+\end{sloppypar}
 
 \section{JSON Round-trip Workload Implementation}
 \label{sec:impl_json_roundtrip}
 
-The fourth workload (Section~\ref{sec:json_roundtrip_workload}) implements \texttt{POST /jsontx} across the same four-variant structure. Each handler reads the request body, parses it as an integer array via the platform's standard \acs{JSON} deserialiser (\texttt{serde\_json} for Rust; \texttt{encoding/json} for Go and TinyGo), sorts the array descending, computes aggregate statistics, and re-serialises the response. The median is defined identically across all four variants as $\mathrm{arr}[\lfloor(n-1)/2\rfloor]$ after the descending sort --- the only handwritten line in each implementation that must agree byte-for-byte across the four variants for the responses to be comparable. Sources: \texttt{docker/rust/04-json-roundtrip/}, \texttt{docker/golang/04-json-roundtrip/}, \texttt{wasm/rust/04-json-roundtrip/}, \texttt{wasm/tinygo/04-json-roundtrip/}.
+\begin{sloppypar}
+The fourth workload (Section~\ref{sec:json_roundtrip_workload}) implements \texttt{POST /jsontx} across the same four-variant structure. Each handler reads the request body, parses it as an integer array via the platform's standard \acs{JSON} deserialiser (\texttt{serde\_json} for Rust, \texttt{encoding/json} for Go and TinyGo), sorts the array descending, computes aggregate statistics, and re-serialises the response. The median is defined identically across all four variants as $\mathrm{arr}[\lfloor(n-1)/2\rfloor]$ after the descending sort --- the only handwritten line in each implementation that must agree byte-for-byte across the four variants for the responses to be comparable.
+\end{sloppypar}
 
 \section{Build Optimisation Across All Crates}
 \label{sec:impl_build_flags}
@@ -189,25 +235,37 @@ The fourth workload (Section~\ref{sec:json_roundtrip_workload}) implements \text
 The build artefacts for all four examples were tightened simultaneously after the initial experiment run, then the binary-size measurements (Chapter~\ref{chap:evaluation}) were re-collected. The three changes are uniform across the corresponding variant family:
 
 \begin{itemize}
-    \item \textbf{Rust} (all eight crates --- four Docker, four Spin): \texttt{panic = "abort"} added to \texttt{[profile.release]}, eliminating unwinding tables for a $\sim$5--10\,\% binary-size reduction with marginally faster code. The four Spin crates additionally gained \texttt{codegen-units = 1} so that \acs{LTO} can fully reason across the (small) crate; the four Docker crates already had this. \texttt{opt-level} remains at \texttt{3} for the Docker crates and \texttt{"s"} (size-tuned) for the Spin crates --- the Wasm side trades a small amount of peak compute for a smaller deployable artefact.
-    \item \textbf{Go} (all five Go binaries, including the \texttt{io-echo} backend): \texttt{-trimpath} added to \texttt{go build} for reproducible builds and smaller binaries (file-path strings are removed from the embedded debug info).
-    \item \textbf{TinyGo} (all four wasm-tinygo variants): \texttt{-no-debug} added to the \texttt{tinygo build} invocation, stripping \acs{DWARF} debug info from the \texttt{.wasm} output for a typical 10--20\,\% size reduction.
+    \item \begin{sloppypar}\textbf{Rust} (all eight crates --- four Docker, four Spin): \texttt{panic = "abort"} added to \texttt{[profile.release]}, eliminating unwinding tables for a $\sim$5--10\,\% binary-size reduction with marginally faster code. The four Spin crates additionally gained \texttt{codegen-units = 1} so that \acs{LTO} can fully reason across the (small) crate. The four Docker crates already had this. \texttt{opt-level} remains at \texttt{3} for the Docker crates and \texttt{"s"} (size-tuned) for the Spin crates --- the Wasm side trades a small amount of peak compute for a smaller deployable artefact.\end{sloppypar}
+    \item \begin{sloppypar}\textbf{Go} (all five Go binaries, including the \texttt{io-echo} backend): \texttt{-trimpath} added to \texttt{go build} for reproducible builds and smaller binaries (file-path strings are removed from the embedded debug info).\end{sloppypar}
+    \item \begin{sloppypar}\textbf{TinyGo} (all four wasm-tinygo variants): \texttt{-no-debug} added to the \texttt{tinygo build} invocation, stripping \acs{DWARF} debug info from the \texttt{.wasm} output for a typical 10--20\,\% size reduction.\end{sloppypar}
 \end{itemize}
 
+\begin{sloppypar}
 These flag refinements feed directly into the \textbf{binary artefact size} metric reported in Section~\ref{sec:eval_size} alongside the existing \acs{OCI} image size, so that the cross-runtime comparison is apples-to-apples on the raw compiled code rather than on the container packaging. The \texttt{binary\_size} measurements are extracted at the local Docker daemon via \texttt{docker~create} + \texttt{docker~cp} from a throwaway container (for the Docker variants) and from the local \texttt{.wasm} file (for the Spin variants), independent of the cluster.
+\end{sloppypar}
 
 \section{Kubernetes Deployment Configuration}
 \label{sec:k8s_deployment}
 
+\begin{sloppypar}
 All four primary variants are deployed into the \texttt{prime-sieve} namespace. The Docker variants each have a standard \texttt{Deployment} (1 replica) and a \texttt{Service} of type \texttt{NodePort}. The Spin variants use a \texttt{SpinApp} \acs{CRD} (managed by the SpinOperator) plus a \texttt{NodePort} \texttt{Service}.
+\end{sloppypar}
 
-\textbf{Docker variants} use standard \texttt{Deployment} manifests with no \texttt{runtimeClassName}; containerd routes these pods through the default \texttt{runc} path.
+\begin{sloppypar}
+\textbf{Docker variants} use standard \texttt{Deployment} manifests with no \texttt{runtimeClassName}. Containerd routes these pods through the default \texttt{runc} path.
+\end{sloppypar}
 
-\textbf{Spin variants} are deployed via the \texttt{SpinApp} \acs{CRD}. The SpinOperator reads the \texttt{SpinApp} resource, creates a managed \texttt{Deployment}, and applies \texttt{runtimeClassName: wasmtime-spin} to its pods---routing them through \texttt{containerd-shim-spin-v2}, which embeds Spin and Wasmtime/Cranelift. Spin images must be pushed via \texttt{spin registry push} (not \texttt{docker push}), as the shim expects Spin-specific \acs{OCI} media types (\texttt{application/vnd.fermyon.spin.manifest.v2+json}). Concurrency in the limited mode is capped by running the SpinApp with \texttt{spec.replicas:~1}; each \acs{WASI}~P1/P2 component is architecturally single-threaded per instance. Scaling must be done via \texttt{kubectl patch spinapp} rather than \texttt{kubectl scale deployment}: the SpinOperator reconciles direct Deployment scaling back to the \texttt{SpinApp}'s \texttt{spec.replicas}.
+\begin{sloppypar}
+\textbf{Spin variants} are deployed via the \texttt{SpinApp} \acs{CRD}. The SpinOperator reads the \texttt{SpinApp} resource, creates a managed \texttt{Deployment}, and applies \texttt{runtimeClassName: wasmtime-spin} to its pods---routing them through \texttt{containerd-shim-spin-v2}, which embeds Spin and Wasmtime/Cranelift. Spin images must be pushed via \texttt{spin registry push} (not \texttt{docker push}), as the shim expects Spin-specific \acs{OCI} media types (\texttt{application/vnd.fermyon.spin.manifest.v2+json}). Concurrency in the limited mode is capped by running the SpinApp with \texttt{spec.replicas:~1}. Each \acs{WASI}~P1/P2 component is architecturally single-threaded per instance. Scaling must be done via \texttt{kubectl patch spinapp} rather than \texttt{kubectl scale deployment}: the SpinOperator reconciles direct Deployment scaling back to the \texttt{SpinApp}'s \texttt{spec.replicas}.
+\end{sloppypar}
 
+\begin{sloppypar}
 \textbf{Resource fairness (supervisor requirement).} All four variants specify identical resource envelopes: \texttt{requests} of 250m \acs{CPU} and 64\,MiB memory, and \texttt{limits.memory} of 128\,MiB. The \texttt{limits.cpu} value is mode-dependent: 500m for the limited-mode comparison and 4000m for the unlimited-mode scaling experiment, raised so that cgroup CPU bandwidth control does not throttle the additional worker threads introduced in unlimited mode (see Section~\ref{sec:eval_performance}). To ensure a fair single-thread limited-mode comparison, \texttt{GOMAXPROCS=1} is set in the \texttt{docker-golang} manifest, \texttt{TOKIO\_WORKER\_THREADS=1} is set in the \texttt{docker-rust} manifest, and the Spin variants run with \texttt{SpinApp~spec.replicas:~1} so that each variant serves one request at a time.
+\end{sloppypar}
 
-Liveness and readiness probes execute \texttt{GET /health}. Docker variants use a 5-second initial delay; Spin variants rely on the SpinOperator's rollout health management via the \texttt{SpinApp} ready condition.
+\begin{sloppypar}
+Liveness and readiness probes execute \texttt{GET /health}. Docker variants use a 5-second initial delay. Spin variants rely on the SpinOperator's rollout health management via the \texttt{SpinApp} ready condition.
+\end{sloppypar}
 
 Table~\ref{tab:nodePorts} shows the NodePort assignments used for direct benchmark access from the k6 load generator.
 
@@ -227,6 +285,8 @@ Table~\ref{tab:nodePorts} shows the NodePort assignments used for direct benchma
     \end{tabular}
 \end{table}
 
+\begin{sloppypar}
 Note that the Spin variants listen on port~80 (Spin's default) rather than 8080. The \texttt{RuntimeClass} object \texttt{wasmtime-spin} (handler \texttt{spin}, node selector \texttt{runtime.spin.sh/runtime=spin}) is applied during \texttt{make deploy} and \texttt{make label}.
+\end{sloppypar}
 
 Prometheus scrapes all four services via pod-level annotations, and the resulting time-series data is used for the memory and \acs{CPU} metrics presented in \hyperref[chap:evaluation]{Chapter~\ref{chap:evaluation}}.

@@ -1,12 +1,12 @@
 \chapter{Evaluation}
 \label{chap:evaluation}
 
-The evaluation phase of this thesis is structured around the four primary benchmark variants (wasm-rust, wasm-tinygo, docker-rust, docker-golang) using SpinKube/Wasmtime as the \acs{Wasm} runtime. Two workloads are evaluated: a \acs{CPU}-bound prime-sieve benchmark and a memory-bandwidth benchmark (heap allocation followed by a SHA-256 hash over the buffer). All measurements were collected on the Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. This chapter presents the metric-by-metric quantitative results for both workloads, followed by the qualitative developer experience assessment.
+The evaluation phase of this thesis is structured around the four primary benchmark variants (wasm-rust, wasm-tinygo, docker-rust, docker-golang) using SpinKube/Wasmtime as the \acs{Wasm} runtime. Four workloads are evaluated: a \acs{CPU}-bound prime-sieve benchmark, a memory-bandwidth benchmark (heap allocation followed by a SHA-256 hash over the buffer), an I/O-bound HTTP fan-out benchmark that amplifies each inbound request into $N$ concurrent outbound \acs{HTTP} GETs against an in-cluster backend, and a \acs{JSON} round-trip benchmark that parses, sorts, aggregates, and re-serialises a length-$N$ integer array under varying request-body size. All measurements were collected on the Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. The first two workloads are reported metric-by-metric (Sections~\ref{sec:eval_size}--\ref{sec:eval_resources}), with each cross-workload metric presented side by side because the underlying performance story is similar across the \acs{CPU}-bound and memory-bandwidth regimes. The HTTP fan-out (Section~\ref{sec:eval_fanout}) and \acs{JSON} round-trip (Section~\ref{sec:eval_jsontx}) are reported per-experiment instead, because the regime-defining findings (the I/O-bound ordering inversion and the body-size sweep) do not collapse cleanly into the cross-workload metric panels. The chapter closes with the qualitative developer experience assessment (Section~\ref{sec:eval_dx}).
 
 \section{Scope and Environment}
 \label{sec:eval_scope}
 
-All measurements were taken on the dedicated Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. Table~\ref{tab:benchmark_environment} summarises the environment. The k6 load generator runs on the same \acs{VM}, connecting to each variant via its localhost \acs{NodePort}, eliminating network latency as a confounding variable. Each metric section that follows presents both benchmarks side-by-side under the \emph{limited} concurrency configuration (single worker per variant); the \emph{unlimited} scaling configuration is reported separately in Section~\ref{sec:eval_performance} (Scaling Experiment).
+All measurements were taken on the dedicated Hetzner Cloud \acs{VM} described in \hyperref[chap:implementation]{Chapter~\ref{chap:implementation}}. Table~\ref{tab:benchmark_environment} summarises the environment. The k6 load generator runs on the same \acs{VM}, connecting to each variant via its localhost \acs{NodePort} to eliminate network latency as a confounding variable. Each metric section that follows presents both benchmarks side-by-side under the \emph{limited} concurrency configuration (single worker per variant). The \emph{unlimited} scaling configuration is reported separately in Section~\ref{sec:eval_performance} (Scaling Experiment).
 
 \begin{table}[htbp]
     \centering
@@ -34,7 +34,9 @@ All measurements were taken on the dedicated Hetzner Cloud \acs{VM} described in
 \label{sec:eval_size}
 \label{sec:eval_artifact_size}
 
+\begin{sloppypar}
 Two size metrics are reported side by side. The \acs{OCI} image size (Figure~\ref{fig:image_size_limited}) is the registry-pushed artefact as reported by \texttt{docker inspect} for the Docker variants and as the local Spin \acs{OCI} artefact byte count for the Spin variants. The binary artefact size (Figure~\ref{fig:binary_size_limited}) is the raw compiled code alone: the \texttt{.wasm} file for the Spin variants, the stripped scratch binary extracted via \texttt{docker cp} for the Docker variants. The two metrics differ by the \acs{OCI} packaging overhead --- $\sim$0.2--0.6\,\acs{MB} for a Docker scratch image (binary + \texttt{ca-certificates.crt} + manifest metadata), and a Spin manifest layer of $\sim$0.0--1.6\,\acs{MB} for a Spin \acs{OCI} artefact (a function of the embedded \texttt{spin.toml} and component metadata). Reporting both makes the cross-runtime comparison apples-to-apples on the raw compiled code, rather than conflating it with container-format overhead.
+\end{sloppypar}
 
 \begin{figure}[htbp]
     \centering
@@ -58,25 +60,31 @@ Two size metrics are reported side by side. The \acs{OCI} image size (Figure~\re
     \subfloat[Memory bandwidth (alloc + SHA-256).]{%
         \includegraphics[width=0.49\textwidth]{figures/02-memory-bandwidth/limited/binary_size.png}%
         \label{fig:binary_size_mb}}
-    \caption{Binary artefact size per variant for the prime-sieve and memory-bandwidth workloads. For Spin variants this is the \texttt{.wasm} file; for Docker variants this is the stripped binary extracted from the scratch image.}
+    \caption{Binary artefact size per variant for the prime-sieve and memory-bandwidth workloads. For Spin variants this is the \texttt{.wasm} file. For Docker variants this is the stripped binary extracted from the scratch image.}
     \label{fig:binary_size_limited}
 \end{figure}
 
+\begin{sloppypar}
 Figure~\ref{fig:image_size_limited} reports the on-disk artifact size for each variant across both workloads. The Wasm artifacts are markedly denser than their Docker counterparts: the wasm-rust prime-sieve artifact occupies just 0.20\,MB---approximately 30$\times$ smaller than the 5.99\,MB docker-golang image and roughly 9$\times$ smaller than the 1.85\,MB docker-rust image---and the same pattern holds for the memory-bandwidth workload. The wasm-tinygo artifact lands at ~0.48\,MB on both workloads (after the TinyGo \texttt{-no-debug} build flag described in Chapter~\ref{chap:implementation} eliminated the previously-bundled DWARF debug section), sitting much closer to wasm-rust than to the Docker variants while still carrying the TinyGo runtime. This artifact-density gap is the structural precondition for the cold-start advantage observed in Figure~\ref{fig:cold_start_limited} and is consistent with the order-of-magnitude image-size deltas reported by \textcite{long2023wasm} and \textcite{wiegratz2024k8swasm}. The result directly answers RQ1 in favour of the Wasm stack: by carrying neither an \acs{OS} userland nor (in the wasm-rust case) a language runtime, the Wasm artifacts achieve a density that traditional \acs{OCI} containers cannot match at equivalent functionality.
+\end{sloppypar}
 
-Figure~\ref{fig:binary_size_limited} sharpens the comparison by stripping out the container-format overhead. The wasm-rust binary is essentially unchanged at 0.20\,\acs{MB} (the Spin \acs{OCI} manifest layer adds negligible bytes), confirming that for the Rust + WASI~P2 cell the \texttt{.wasm} \textit{is} the artefact. The Docker variants show that the scratch \acs{OCI} packaging adds $\sim$0.2\,\acs{MB} of cert-bundle and manifest metadata on top of the actual binary (docker-rust: 1.65\,\acs{MB} binary vs.\ 1.85\,\acs{MB} image; docker-golang: 5.78\,\acs{MB} binary vs.\ 5.99\,\acs{MB} image). The wasm-tinygo \textit{binary} and \textit{image} now both measure ~0.48\,\acs{MB} after the \texttt{-no-debug} TinyGo flag was added (Chapter~\ref{chap:implementation}); the Spin \acs{OCI} manifest overhead the earlier-iteration build carried (~1.3--1.6\,\acs{MB}) has been eliminated, and the artefact-density advantage of TinyGo over Docker/Go is now ~12$\times$ on both metrics (0.48 vs.\ 5.78--5.99\,\acs{MB}).
+\begin{sloppypar}
+Figure~\ref{fig:binary_size_limited} sharpens the comparison by stripping out the container-format overhead. The wasm-rust binary is essentially unchanged at 0.20\,\acs{MB} (the Spin \acs{OCI} manifest layer adds negligible bytes), confirming that for the Rust + WASI~P2 cell the \texttt{.wasm} \textit{is} the artefact. The Docker variants show that the scratch \acs{OCI} packaging adds $\sim$0.2\,\acs{MB} of cert-bundle and manifest metadata on top of the actual binary (docker-rust: 1.65\,\acs{MB} binary vs.\ 1.85\,\acs{MB} image, docker-golang: 5.78\,\acs{MB} binary vs.\ 5.99\,\acs{MB} image). The wasm-tinygo \textit{binary} and \textit{image} now both measure ~0.48\,\acs{MB} after the \texttt{-no-debug} TinyGo flag was added (Chapter~\ref{chap:implementation}). The Spin \acs{OCI} manifest overhead the earlier-iteration build carried (~1.3--1.6\,\acs{MB}) has been eliminated. The artefact-density advantage of TinyGo over Docker/Go is now ~12$\times$ on both metrics (0.48 vs.\ 5.78--5.99\,\acs{MB}).
+\end{sloppypar}
 
 \section{Startup Latency}
 \label{sec:eval_startup}
 
-Methodology: Six measurement runs per variant. Run~1 = cold start (image not cached on node, includes \acs{OCI} pull). Runs~2--6 = warm starts (image cached). SpinKube variants scale via \texttt{kubectl patch spinapp} (not \texttt{kubectl scale deployment}); the SpinOperator manages pod lifecycle from the \acs{CRD}. Latency is measured from the scale-to-zero command until the first \acs{HTTP}~200 response.
+\begin{sloppypar}
+Methodology: Six measurement runs per variant. Run~1 = cold start (image not cached on node, includes \acs{OCI} pull). Runs~2--6 = warm starts (image cached). SpinKube variants scale via \texttt{kubectl patch spinapp} (not \texttt{kubectl scale deployment}). The SpinOperator manages pod lifecycle from the \acs{CRD}. Latency is measured from the scale-to-zero command until the first \acs{HTTP}~200 response.
+\end{sloppypar}
 
 The discussion of the figures below is informed by three structural factors expected to drive the observed differences:
 
 \begin{itemize}
     \item Spin \acs{OCI} artifacts use Spin-specific media types and are typically smaller than equivalent Docker images. Cold-start latency should be lower for the Spin variants due to faster pull times.
-    \item Wasmtime/Cranelift performs \acs{JIT} compilation on first module instantiation; Cranelift is designed for fast compile times rather than maximum runtime optimisation.
-    \item The SpinOperator adds a reconciliation loop between the \texttt{SpinApp} \acs{CRD} update and the pod creation; this may add a small fixed overhead ($\sim$1--2\,s) to warm-start measurements compared to direct \texttt{Deployment} scaling.
+    \item Wasmtime/Cranelift performs \acs{JIT} compilation on first module instantiation. Cranelift's compilation strategy is documented to prioritise fast compile times over maximum runtime optimisation~\cite{bytecodealliance2024wasmtime, fastly2020lucetwasm}.
+    \item \begin{sloppypar}The SpinOperator adds a reconciliation loop between the \texttt{SpinApp} \acs{CRD} update and the pod creation. This may add a small fixed overhead ($\sim$1--2\,s) to warm-start measurements compared to direct \texttt{Deployment} scaling.\end{sloppypar}
 \end{itemize}
 
 \begin{figure}[htbp]
@@ -92,7 +100,9 @@ The discussion of the figures below is informed by three structural factors expe
     \label{fig:cold_start_limited}
 \end{figure}
 
+\begin{sloppypar}
 Figure~\ref{fig:cold_start_limited} shows three of the four variants converging tightly at first response: on the prime sieve, wasm-rust takes 34.2\,ms, wasm-tinygo 23.6\,ms, and docker-rust 21.4\,ms---within a ~13\,ms band of each other. The docker-golang variant is the outlier, taking 3688\,ms to serve its first \acs{HTTP}~200 response, roughly two orders of magnitude slower than the rest. The memory-bandwidth workload reproduces the same separation (wasm-rust 25.7\,ms, wasm-tinygo 24.4\,ms, docker-rust 24.7\,ms, docker-golang 4817\,ms). The cold-start gap is therefore not a general ``Docker versus Wasm'' phenomenon: docker-rust (which ships only the stripped Tokio executable on a \texttt{scratch} base) matches the Wasm artifacts to within ~13\,ms, while docker-golang---whose 5.99\,MB image is the largest artifact in the matrix (Figure~\ref{fig:image_size_limited})---bears a multi-second penalty. The artifact-density advantage anticipated by \textcite{long2023wasm} and \textcite{wiegratz2024k8swasm} therefore manifests only against the heaviest container artifact in this study, not against minimal scratch-based containers.
+\end{sloppypar}
 
 \begin{figure}[htbp]
     \centering
@@ -116,7 +126,9 @@ Taken together, Figures~\ref{fig:cold_start_limited} and~\ref{fig:warm_start_lim
 \section{Runtime Performance Under Load}
 \label{sec:eval_performance}
 
-Methodology: k6 ramping-\acs{VU} executor. 1~\acs{VU} ramps to 50~\acp{VU} over 20\,s, holds for 60\,s, ramps down. Prime-sieve requests target \texttt{GET /sieve?limit=100000\&no\_list=1}; memory-bandwidth requests target \texttt{GET /membw?size\_kb=64\&no\_hash=0}. Primary metrics: \acs{RPS}, failure rate, p50/p95/p99 end-to-end latency, and the \texttt{elapsed\_us} custom metric extracted from each \acs{JSON} response body.
+\begin{sloppypar}
+Methodology: k6 ramping-\acs{VU} executor. 1~\acs{VU} ramps to 50~\acp{VU} over 20\,s, holds for 60\,s, ramps down. Prime-sieve requests target \texttt{GET /sieve?limit=100000\&no\_list=1}. Memory-bandwidth requests target \texttt{GET /membw?size\_kb=64\&no\_hash=0}. Primary metrics: \acs{RPS}, failure rate, p50/p95/p99 end-to-end latency, and the \texttt{elapsed\_us} custom metric extracted from each \acs{JSON} response body.
+\end{sloppypar}
 
 \begin{figure}[htbp]
     \centering
@@ -131,7 +143,7 @@ Methodology: k6 ramping-\acs{VU} executor. 1~\acs{VU} ramps to 50~\acp{VU} over 
     \label{fig:throughput_limited}
 \end{figure}
 
-Figure~\ref{fig:throughput_limited} quantifies sustained request throughput when concurrency is held strictly equal across variants. On the \acs{CPU}-bound prime sieve, docker-golang leads at 3240\,RPS, followed by wasm-rust at 2554\,RPS, docker-rust at 1906\,RPS, and wasm-tinygo at 1256\,RPS---a 2.58$\times$ spread from the fastest to the slowest variant, much tighter than earlier \acs{WASI}~P1 benchmarks. The memory-bandwidth workload exhibits a similar profile: docker-golang 3460\,RPS, docker-rust 3436\,RPS, wasm-rust 2278\,RPS, and wasm-tinygo 1518\,RPS---a 2.28$\times$ spread. The \acs{SFI} bounds-checking overhead reported by \textcite{jangda2019notsofast} and \textcite{spies2021evaluation} is still present as a per-instruction tax: the wasm-rust variant trails docker-golang by ~21\% on the prime sieve and by ~34\% on memory-bandwidth, but the gap is roughly an order of magnitude smaller than the ~10$\times$ deficit \textcite{sondell2024performance} reported under \acs{WASI}~P1. The wasm-tinygo variant remains the slowest in both workloads, between 2.3$\times$ and 2.6$\times$ behind the leader; the gap is attributable to the bundled TinyGo runtime overhead rather than to Spin's dispatch model, since wasm-rust uses the same dispatch path and remains substantially closer to the Docker leaders. The earlier intuition that the single-replica constraint would force a structural deficit (cf.~\textcite{sondell2024performance}, who reported a 10$\times$ gap under \acs{WASI}~P1) is not supported under the \acs{WASI}~P2 + Spin configuration measured here.
+Figure~\ref{fig:throughput_limited} quantifies sustained request throughput when concurrency is held strictly equal across variants. On the \acs{CPU}-bound prime sieve, docker-golang leads at 3240\,RPS, followed by wasm-rust at 2554\,RPS, docker-rust at 1906\,RPS, and wasm-tinygo at 1256\,RPS---a 2.58$\times$ spread from the fastest to the slowest variant, much tighter than earlier \acs{WASI}~P1 benchmarks. The memory-bandwidth workload exhibits a similar profile: docker-golang 3460\,RPS, docker-rust 3436\,RPS, wasm-rust 2278\,RPS, and wasm-tinygo 1518\,RPS---a 2.28$\times$ spread. The \acs{SFI} bounds-checking overhead reported by \textcite{jangda2019notsofast} and \textcite{spies2021evaluation} is still present as a per-instruction tax. The wasm-rust variant trails docker-golang by ~21\% on the prime sieve and by ~34\% on memory-bandwidth, but the gap is roughly an order of magnitude smaller than the ~10$\times$ deficit \textcite{sondell2024performance} reported under \acs{WASI}~P1. The wasm-tinygo variant remains the slowest in both workloads, between 2.3$\times$ and 2.6$\times$ behind the leader. The gap is attributable to the bundled TinyGo runtime overhead rather than to Spin's dispatch model, since wasm-rust uses the same dispatch path and remains substantially closer to the Docker leaders. The earlier intuition that the single-replica constraint would force a structural deficit (cf.~\textcite{sondell2024performance}, who reported a 10$\times$ gap under \acs{WASI}~P1) is not supported under the \acs{WASI}~P2 + Spin configuration measured here.
 
 \begin{figure}[htbp]
     \centering
@@ -146,7 +158,7 @@ Figure~\ref{fig:throughput_limited} quantifies sustained request throughput when
     \label{fig:latency_limited}
 \end{figure}
 
-Figure~\ref{fig:latency_limited} decomposes the throughput differential into p50, p95, and p99 end-to-end latency percentiles. On the \acs{CPU}-bound prime sieve, docker-golang's p50 of 12.1\,ms is the lowest, with wasm-rust at 15.1\,ms (~25\% gap), docker-rust at 23.5\,ms, and wasm-tinygo at 33.1\,ms (~2.7$\times$ slower than docker-golang---closer than the order-of-magnitude gaps reported in earlier \acs{WASI}~P1 work). At the tail, docker-golang holds p99 at 21.8\,ms; wasm-rust's p99 of 34.2\,ms is the higher of the two, consistent with Wasmtime's \acs{JIT} compilation context contributing tail variance the Docker variants do not pay. The wasm-tinygo variant's p99 of 65.5\,ms remains the widest tail of the four. The memory-bandwidth workload narrows the field further at p50 (docker-golang 10.5\,ms, docker-rust 10.5\,ms, wasm-rust 17.4\,ms, wasm-tinygo 27.2\,ms) but widens the tail for wasm-tinygo (p99 54.4\,ms) because the SHA-256 inner loop interacts unfavourably with Wasm's bounds-checking on heap writes. The relatively flat p50--p99 spread for both Docker variants (under 11\,ms band-to-tail) demonstrates that, under Spin's \acs{WASI}~P2 event-loop dispatch, queueing-induced tail blow-up---predicted by \textcite{sondell2024performance} under \acs{WASI}~P1 single-instance dispatch and observed by \textcite{liu2025wasmcontainer} on container-runtime variants---does not appear as a catastrophic blow-up in either Wasm variant, though wasm-rust's wider tail (p50--p99 spread of 19\,ms on the prime sieve) shows the residual cost of the \acs{JIT} compilation path. This refines the answer to RQ3 for the limited mode: \acs{WASI}~P2 closes most of the latency gap that \acs{WASI}~P1 imposed, and the residual deficit is concentrated in wasm-tinygo's bundled-runtime overhead and in wasm-rust's slightly wider tail.
+Figure~\ref{fig:latency_limited} decomposes the throughput differential into p50, p95, and p99 end-to-end latency percentiles. On the \acs{CPU}-bound prime sieve, docker-golang's p50 of 12.1\,ms is the lowest, with wasm-rust at 15.1\,ms (~25\% gap), docker-rust at 23.5\,ms, and wasm-tinygo at 33.1\,ms (~2.7$\times$ slower than docker-golang---closer than the order-of-magnitude gaps reported in earlier \acs{WASI}~P1 work). At the tail, docker-golang holds p99 at 21.8\,ms. wasm-rust's p99 of 34.2\,ms is the higher of the two, consistent with Wasmtime's \acs{JIT} compilation context contributing tail variance the Docker variants do not pay. The wasm-tinygo variant's p99 of 65.5\,ms remains the widest tail of the four. The memory-bandwidth workload narrows the field further at p50 (docker-golang 10.5\,ms, docker-rust 10.5\,ms, wasm-rust 17.4\,ms, wasm-tinygo 27.2\,ms) but widens the tail for wasm-tinygo (p99 54.4\,ms) because the SHA-256 inner loop interacts unfavourably with Wasm's bounds-checking on heap writes. The relatively flat p50--p99 spread for both Docker variants (under 11\,ms band-to-tail) demonstrates that, under Spin's \acs{WASI}~P2 event-loop dispatch, queueing-induced tail blow-up---predicted by \textcite{sondell2024performance} under \acs{WASI}~P1 single-instance dispatch and observed by \textcite{liu2025wasmcontainer} on container-runtime variants---does not appear as a catastrophic blow-up in either Wasm variant. However, wasm-rust's wider tail (p50--p99 spread of 19\,ms on the prime sieve) shows the residual cost of the \acs{JIT} compilation path. This refines the answer to RQ3 for the limited mode: \acs{WASI}~P2 closes most of the latency gap that \acs{WASI}~P1 imposed, and the residual deficit is concentrated in wasm-tinygo's bundled-runtime overhead and in wasm-rust's slightly wider tail.
 
 \begin{figure}[htbp]
     \centering
@@ -161,11 +173,15 @@ Figure~\ref{fig:latency_limited} decomposes the throughput differential into p50
     \label{fig:error_rate_limited}
 \end{figure}
 
+\begin{sloppypar}
 Figure~\ref{fig:error_rate_limited} reports the request failure rate (fraction of non-2xx \acs{HTTP} responses) for each variant. Across both workloads and all four variants, the failure rate is effectively zero---the k6 generator's threshold of \texttt{rate<0.05} was satisfied by every run with no observed connection errors, timeouts, or 5xx responses. This negative result confirms that the throughput and latency deltas reported in Figures~\ref{fig:throughput_limited} and~\ref{fig:latency_limited} are not artefacts of dropped or rejected requests on the slower variants---each variant serves its full request stream in order rather than shedding load under pressure. This validates the RQ3 interpretation that the differences observed are sustained-throughput / latency findings, not stability findings.
+\end{sloppypar}
 
 \subsection{Scaling Experiment}
 
-In addition to the standard limited-mode run (GOMAXPROCS=1, TOKIO\_WORKER\_THREADS=1, SpinApp \texttt{spec.replicas:~1}), a second pass is performed in unlimited mode (GOMAXPROCS=4, TOKIO\_WORKER\_THREADS=4, SpinApp \texttt{spec.replicas:~4}), with the Kubernetes \texttt{limits.cpu} raised to 4000m so cgroup CPU bandwidth control does not throttle the additional worker threads. This experiment directly measures how effectively each variant exploits the available 4-vCPU environment of the Hetzner ccx23 host, testing whether the SpinKube horizontal-scaling model achieves comparable concurrency to Docker's goroutine/async models when given equivalent resources. The corresponding throughput and latency curves are reported in Figures~\ref{fig:throughput_unlimited} and~\ref{fig:latency_unlimited}; Figure~\ref{fig:rps_over_time_ps_unlim} additionally shows the per-second \acs{RPS} time series across the 80-second k6 window for the prime-sieve workload (the memory-bandwidth experiment does not emit an equivalent time-series chart).
+\begin{sloppypar}
+In addition to the standard limited-mode run (GOMAXPROCS=1, TOKIO\_WORKER\_THREADS=1, SpinApp \texttt{spec.replicas:~1}), a second pass is performed in unlimited mode (GOMAXPROCS=4, TOKIO\_WORKER\_THREADS=4, SpinApp \texttt{spec.replicas:~4}), with the Kubernetes \texttt{limits.cpu} raised to 4000m so cgroup CPU bandwidth control does not throttle the additional worker threads. This experiment directly measures how effectively each variant exploits the available 4-vCPU environment of the Hetzner ccx23 host. Specifically, it tests whether the SpinKube horizontal-scaling model achieves comparable concurrency to Docker's goroutine/async models when given equivalent resources. The corresponding throughput and latency curves are reported in Figures~\ref{fig:throughput_unlimited} and~\ref{fig:latency_unlimited}. Figure~\ref{fig:rps_over_time_ps_unlim} additionally shows the per-second \acs{RPS} time series across the 80-second k6 window for the prime-sieve workload (the memory-bandwidth experiment does not emit an equivalent time-series chart).
+\end{sloppypar}
 
 \begin{figure}[htbp]
     \centering
@@ -180,7 +196,9 @@ In addition to the standard limited-mode run (GOMAXPROCS=1, TOKIO\_WORKER\_THREA
     \label{fig:throughput_unlimited}
 \end{figure}
 
-Figure~\ref{fig:throughput_unlimited} reports throughput once each variant is allowed to exploit the available concurrency budget (SpinApp \texttt{spec.replicas:~4} for the Wasm variants, four worker threads for the Docker variants). The ordering observed in limited mode is preserved rather than inverted: on the prime sieve, docker-golang leads at 3375\,RPS, followed by docker-rust at 3048\,RPS, wasm-rust at 2569\,RPS, and wasm-tinygo at 1326\,RPS; on the memory-bandwidth workload the two Docker variants are within 1\% of each other (docker-golang 3296\,RPS, docker-rust 3274\,RPS), while wasm-rust trails at 2282\,RPS and wasm-tinygo at 1569\,RPS. Two observations are notable. First, wasm-rust's RPS is essentially flat between limited (2554) and unlimited (2569) modes on the prime sieve, indicating that Spin's \acs{WASI}~P2 event-loop dispatch already extracts most of the available per-pod throughput from a single replica via \texttt{wasi:io/poll} suspension points---additional replicas do not yield additional throughput because the workload is already saturating a single pod's CPU budget. Second, the Docker variants benefit more visibly from the extra threads (docker-rust 1906 $\to$ 3048\,RPS, +60\%; docker-golang 3240 $\to$ 3375, +4\%) because their limited-mode runs were genuinely constrained by \texttt{TOKIO\_WORKER\_THREADS=1} / \texttt{GOMAXPROCS=1}. The wasm-tinygo variant gains modestly on memory-bandwidth (1518 $\to$ 1569\,RPS) but remains the slowest, again because the bundled TinyGo runtime dominates per-request overhead.
+\begin{sloppypar}
+Figure~\ref{fig:throughput_unlimited} reports throughput once each variant is allowed to exploit the available concurrency budget (SpinApp \texttt{spec.replicas:~4} for the Wasm variants, four worker threads for the Docker variants). The ordering observed in limited mode is preserved rather than inverted: on the prime sieve, docker-golang leads at 3375\,RPS, followed by docker-rust at 3048\,RPS, wasm-rust at 2569\,RPS, and wasm-tinygo at 1326\,RPS. On the memory-bandwidth workload the two Docker variants are within 1\% of each other (docker-golang 3296\,RPS, docker-rust 3274\,RPS), while wasm-rust trails at 2282\,RPS and wasm-tinygo at 1569\,RPS. Two observations are notable. First, wasm-rust's RPS is essentially flat between limited (2554) and unlimited (2569) modes on the prime sieve. This indicates that Spin's \acs{WASI}~P2 event-loop dispatch already extracts most of the available per-pod throughput from a single replica via \texttt{wasi:io/poll} suspension points. Additional replicas do not yield additional throughput because the workload is already saturating a single pod's CPU budget. Second, the Docker variants benefit more visibly from the extra threads (docker-rust 1906 $\to$ 3048\,RPS, +60\%, and docker-golang 3240 $\to$ 3375, +4\%) because their limited-mode runs were genuinely constrained by \texttt{TOKIO\_WORKER\_THREADS=1} / \texttt{GOMAXPROCS=1}. The wasm-tinygo variant gains modestly on memory-bandwidth (1518 $\to$ 1569\,RPS) but remains the slowest, again because the bundled TinyGo runtime dominates per-request overhead.
+\end{sloppypar}
 
 \begin{figure}[htbp]
     \centering
@@ -204,16 +222,20 @@ Figure~\ref{fig:latency_unlimited} reports the corresponding end-to-end latency 
     \label{fig:rps_over_time_ps_unlim}
 \end{figure}
 
-Figure~\ref{fig:rps_over_time_ps_unlim} replays the prime-sieve unlimited-mode load test as a per-second \acs{RPS} time series. Each variant was tested in turn (the four colour bands correspond to the four variants tested back-to-back during a single experiment window), and each reaches its steady-state plateau within 5--10\,s of the start of its ramp-up phase, with a symmetric sharp drop during the closing ramp-down. The wasm-rust plateau sits at ~3000\,RPS with mild oscillation; wasm-tinygo holds a flat ~1450\,RPS; docker-rust runs at ~3500\,RPS with moderate variability; and docker-golang plateaus at ~3800--4400\,RPS but exhibits one notable early dip down to ~1600\,RPS shortly after ramp-up. The steady-state plateaus visible in the chart sit slightly above the per-variant aggregate values in Figure~\ref{fig:throughput_unlimited}, the gap reflecting the lower-throughput ramp-up and ramp-down windows that the aggregate mean includes. The mid-test stability story is therefore the opposite of what an earlier-iteration run of the same workload produced: under the final-run measurement, the largest mid-test variability sits on the docker-golang variant rather than on wasm-rust.
+Figure~\ref{fig:rps_over_time_ps_unlim} replays the prime-sieve unlimited-mode load test as a per-second \acs{RPS} time series. Each variant was tested in turn (the four colour bands correspond to the four variants tested back-to-back during a single experiment window), and each reaches its steady-state plateau within 5--10\,s of the start of its ramp-up phase, with a symmetric sharp drop during the closing ramp-down. The wasm-rust plateau sits at ~3000\,RPS with mild oscillation. wasm-tinygo holds a flat ~1450\,RPS. docker-rust runs at ~3500\,RPS with moderate variability. docker-golang plateaus at ~3800--4400\,RPS but exhibits one notable early dip down to ~1600\,RPS shortly after ramp-up. The steady-state plateaus visible in the chart sit slightly above the per-variant aggregate values in Figure~\ref{fig:throughput_unlimited}, the gap reflecting the lower-throughput ramp-up and ramp-down windows that the aggregate mean includes. The mid-test stability story is therefore the opposite of what an earlier-iteration run of the same workload produced: under the final-run measurement, the largest mid-test variability sits on the docker-golang variant rather than on wasm-rust.
 
 \subsection{Observed Throughput Profile}
 
-SpinKube's request-handler model dispatches each incoming request to the Wasmtime instance hosted in the pod's containerd-shim-spin process; horizontal scaling is achieved by raising the SpinApp's \texttt{spec.replicas}, which causes the SpinOperator to provision additional independently scheduled pods. With \texttt{spec.replicas:~1} (the limited mode used for the primary fairness comparison) a single pod handles the request stream via Spin's \acs{WASI}~P2 event-loop, which pipelines in-flight requests across \texttt{wasi:io/poll} suspension points rather than serialising them; with \texttt{spec.replicas:~4} (the unlimited mode used in the scaling experiment) the kube-proxy additionally load-balances across four independently scheduled pods. (Spin 2.x---\texttt{spin\_manifest\_version~=~2}---no longer exposes the legacy \texttt{max\_instances} field; concurrency is controlled at the pod/replica level instead.) Comparing Figures~\ref{fig:throughput_limited} and~\ref{fig:throughput_unlimited} shows that the Docker variants---whose limited-mode runs were genuinely throttled by \texttt{GOMAXPROCS=1} / \texttt{TOKIO\_WORKER\_THREADS=1}---gain the most from the additional concurrency budget, while wasm-rust's throughput is roughly flat across modes because its \acs{WASI}~P2 event-loop already saturates a single pod's \acs{CPU} budget.
+\begin{sloppypar}
+SpinKube's request-handler model dispatches each incoming request to the Wasmtime instance hosted in the pod's containerd-shim-spin process. Horizontal scaling is achieved by raising the SpinApp's \texttt{spec.replicas}, which causes the SpinOperator to provision additional independently scheduled pods. With \texttt{spec.replicas:~1} (the limited mode used for the primary fairness comparison) a single pod handles the request stream via Spin's \acs{WASI}~P2 event-loop, which pipelines in-flight requests across \texttt{wasi:io/poll} suspension points rather than serialising them. With \texttt{spec.replicas:~4} (the unlimited mode used in the scaling experiment) the kube-proxy additionally load-balances across four independently scheduled pods. (Spin 2.x---\texttt{spin\_manifest\_version~=~2}---no longer exposes the legacy \texttt{max\_instances} field, and concurrency is controlled at the pod/replica level instead.) Comparing Figures~\ref{fig:throughput_limited} and~\ref{fig:throughput_unlimited} shows that the Docker variants---whose limited-mode runs were genuinely throttled by \texttt{GOMAXPROCS=1} / \texttt{TOKIO\_WORKER\_THREADS=1}---gain the most from the additional concurrency budget. In contrast, wasm-rust's throughput is roughly flat across modes because its \acs{WASI}~P2 event-loop already saturates a single pod's \acs{CPU} budget.
+\end{sloppypar}
 
 \section{Memory and CPU Footprint}
 \label{sec:eval_resources}
 
+\begin{sloppypar}
 Methodology: Prometheus \texttt{container\_memory\_rss} metric collected at idle (pod running 60\,s with no requests) and peak (maximum during k6 load window). \acs{CPU} reported as average millicores during the k6 hold phase.
+\end{sloppypar}
 
 \begin{figure}[htbp]
     \centering
@@ -232,8 +254,8 @@ Figure~\ref{fig:memory_limited} reports per-variant \acs{RSS} at idle and at pea
 
 \begin{itemize}
     \item Spin's \acs{RSS} includes Wasmtime's \acs{JIT} compilation context and the \acs{Wasm} component's pre-allocated linear-memory region, both of which the Docker variants do not pay.
-    \item Under \texttt{spec.replicas:~1} a single pod hosts a single Wasmtime instance; horizontal scaling provisions additional pods, so aggregate \acs{RSS} scales roughly linearly with the replica count while per-pod \acs{RSS} stays approximately constant.
-    \item docker-rust consistently exhibits the lowest \acs{RSS} (~1--3\,MB) because it ships only the stripped Tokio executable on a \texttt{scratch} base, with no garbage collector and no language runtime metadata.
+    \item \begin{sloppypar}Under \texttt{spec.replicas:~1} a single pod hosts a single Wasmtime instance. Horizontal scaling provisions additional pods, so aggregate \acs{RSS} scales roughly linearly with the replica count while per-pod \acs{RSS} stays approximately constant.\end{sloppypar}
+    \item \begin{sloppypar}docker-rust consistently exhibits the lowest \acs{RSS} (~1--3\,MB) because it ships only the stripped Tokio executable on a \texttt{scratch} base, with no garbage collector and no language runtime metadata.\end{sloppypar}
 \end{itemize}
 
 \begin{figure}[htbp]
@@ -247,12 +269,17 @@ Figure~\ref{fig:cpu_ps_lim} highlights a complementary trade-off for the prime-s
 
 \subsection{Observed Memory Profile}
 
-The two figures expose a clean trade-off rather than a strict winner: the Wasm variants pay a per-pod linear-memory footprint premium of roughly 20\,MB (rooted in Wasmtime's \acs{JIT} context and the Wasm component's pre-allocated linear-memory region), while the docker-rust variant inverts the trade-off by holding the lowest \acs{RSS} but consuming the most CPU cycles per request. This matters for capacity planning: on a memory-constrained host, the Docker variants pack more replicas per node; on a \acs{CPU}-constrained host, the Wasm variants leave more headroom per replica.
+The two figures expose a clean trade-off rather than a strict winner. The Wasm variants pay a per-pod linear-memory footprint premium of roughly 20\,MB (rooted in Wasmtime's \acs{JIT} context and the Wasm component's pre-allocated linear-memory region). The docker-rust variant inverts the trade-off by holding the lowest \acs{RSS} but consuming the most CPU cycles per request. This matters for capacity planning: on a memory-constrained host, the Docker variants pack more replicas per node, while on a \acs{CPU}-constrained host, the Wasm variants leave more headroom per replica. The structural sources of this premium---the pre-allocated linear-memory region, the JIT compilation context, and per-instance metadata---are the same ones \textcite{jansen2025memwasm} target in their concurrent work on memory-efficient \acs{Wasm} container packing. The ${\sim}20$\,MB floor measured here is consistent with the per-instance budgets that line of work seeks to reduce.
 
 \section{HTTP Fan-out Results (I/O-Bound)}
 \label{sec:eval_fanout}
 
-The HTTP fan-out workload (Section~\ref{sec:http_fanout_workload}) extends the evaluation to the I/O-bound regime, the third workload class promised in the task description. Each inbound request is amplified into $N$ concurrent outbound \acs{HTTP} GETs against the in-cluster \texttt{io-echo} backend, so per-request latency is dominated by outbound wait rather than \acs{CPU} work.
+\begin{sloppypar}
+The HTTP fan-out workload (Section~\ref{sec:http_fanout_workload}) extends the evaluation to the I/O-bound regime, the third workload class promised in the task description. Each inbound request is amplified into $N$ concurrent outbound \acs{HTTP} GETs against the in-cluster \texttt{io-echo} backend, so per-request latency is dominated by outbound wait rather than \acs{CPU} work. The default load profile is 50~\acp{VU} for 60\,s after a 20\,s ramp-up, with $N=5$ outbound calls per inbound request and a 50\,ms artificial backend delay $\Delta$ per outbound call. Five metrics are reported in the same order as Sections~\ref{sec:eval_size}--\ref{sec:eval_resources}: artefact size, startup latency, sustained throughput, end-to-end latency, and error rate / memory footprint. Both limited and unlimited scaling modes are reported for the throughput and latency panels because the per-pod outbound concurrency budget is the regime-defining variable. The artefact-size, startup-latency, and idle-time memory panels are workload-build properties and are identical across the two modes, so only the limited-mode panels are embedded here. The corresponding unlimited-mode PNGs are present in the \texttt{thesis-experiments} repository under \texttt{figures/03-http-fanout/unlimited/} for completeness.
+\end{sloppypar}
+
+\subsection{Artefact sizes}
+\label{sec:eval_fanout_size}
 
 \begin{figure}[htbp]
     \centering
@@ -267,6 +294,13 @@ The HTTP fan-out workload (Section~\ref{sec:http_fanout_workload}) extends the e
     \label{fig:fanout_sizes}
 \end{figure}
 
+\begin{sloppypar}
+Figure~\ref{fig:fanout_sizes} confirms that the artefact-density advantage observed on the \acs{CPU}-bound and memory-bandwidth workloads (Figures~\ref{fig:image_size_limited}--\ref{fig:binary_size_limited}) carries over to the I/O-bound regime essentially unchanged. The \texttt{wasm-rust} cell occupies 0.23\,\acs{MB} for both the \acs{OCI} image and the raw \texttt{.wasm} binary. \texttt{wasm-tinygo} is 0.52\,\acs{MB} on both metrics. Both \acs{Wasm} variants are an order of magnitude smaller than the smallest Docker variant: \texttt{docker-rust} at 3.82\,\acs{MB} image / 3.61\,\acs{MB} binary, and \texttt{docker-golang} at 6.47\,\acs{MB} image / 6.26\,\acs{MB} binary. The \texttt{docker-rust} image is larger here than its 1.85\,\acs{MB} prime-sieve counterpart because the \texttt{reqwest} crate (chosen for its concurrent \texttt{join\_all} path) pulls in \texttt{rustls}, \texttt{hyper}, and TLS-trust-store machinery that the prime-sieve handler does not need. The \texttt{wasm-rust} cell avoids the same growth because Spin's \texttt{spin\_sdk::http::send} reuses the host's outbound \acs{HTTP} stack rather than embedding its own client in the \texttt{.wasm} module. The artifact-density story therefore tightens, rather than weakens, when the workload requires a non-trivial outbound \acs{HTTP} client.
+\end{sloppypar}
+
+\subsection{Startup latency}
+\label{sec:eval_fanout_startup}
+
 \begin{figure}[htbp]
     \centering
     \subfloat[Cold start.]{%
@@ -279,6 +313,13 @@ The HTTP fan-out workload (Section~\ref{sec:http_fanout_workload}) extends the e
     \caption{HTTP fan-out: cold-start and warm-start latency.}
     \label{fig:fanout_startup}
 \end{figure}
+
+\begin{sloppypar}
+Figure~\ref{fig:fanout_startup} reproduces the three-fast-one-slow startup profile of the simpler workloads. On cold start the three fast variants land within a 7.7\,ms band---\texttt{docker-rust} 24.2\,ms, \texttt{wasm-tinygo} 26.1\,ms, \texttt{wasm-rust} 31.9\,ms---and the warm-start values are essentially identical to the cold-start values for those three (25.8 / 26.3 / 29.9\,ms means, all with sub-4\,ms standard deviation across the five-sample warm-start window). The fourth variant, \texttt{docker-golang}, takes 4806\,ms cold and a 5947\,ms warm-start mean with a 3080\,ms standard deviation across the five samples---the variance is itself diagnostic of the entrypoint bootstrap path. The fan-out workload therefore does not move the cold-start boundary: the multi-second startup cost remains a property of the \texttt{docker-golang} container's entrypoint and runtime initialisation, not of the workload, and \texttt{docker-rust} continues to match the \acs{Wasm} cells to within ${\sim}10$\,ms at first response.
+\end{sloppypar}
+
+\subsection{Throughput}
+\label{sec:eval_fanout_throughput}
 
 \begin{figure}[htbp]
     \centering
@@ -293,6 +334,13 @@ The HTTP fan-out workload (Section~\ref{sec:http_fanout_workload}) extends the e
     \label{fig:fanout_throughput}
 \end{figure}
 
+\begin{sloppypar}
+Figure~\ref{fig:fanout_throughput} is the regime-defining panel. In limited mode the four variants distribute as follows: \texttt{docker-rust} sustains 525.2\,\acs{RPS} on the concurrent \texttt{reqwest~+~join\_all} path, \texttt{wasm-rust} achieves 123.8\,\acs{RPS} via \texttt{spin\_sdk::http::send~+~futures::join\_all}, \texttt{docker-golang} reaches 99.5\,\acs{RPS} with \texttt{net/http~+~goroutines~+~WaitGroup}, and \texttt{wasm-tinygo} lags at 46.7\,\acs{RPS} because the TinyGo wasip1 runtime panics on \texttt{sync.WaitGroup.Wait()} and the handler is therefore forced to dispatch its $N=5$ outbound calls serially (Section~\ref{sec:impl_http_fanout}). The variant ordering in the I/O-bound regime is not the same as in the \acs{CPU}-bound regime: \texttt{docker-rust} now leads by a wide margin (${\sim}4.2\times$ over \texttt{wasm-rust}), \texttt{wasm-rust} beats \texttt{docker-golang} by ${\sim}24$\% despite the older \acs{WASI}~P1 runtime narrative predicting the reverse, and the fastest-to-slowest spread widens to 11.2$\times$---an order of magnitude larger than the 2.58$\times$ prime-sieve spread. Unlimited mode preserves the ordering but does not collapse it: \texttt{docker-rust} 569.7\,\acs{RPS}, \texttt{docker-golang} 127.6, \texttt{wasm-rust} 125.7, \texttt{wasm-tinygo} 61.6. The marginal gains over limited mode are slight for \texttt{docker-rust} and \texttt{wasm-rust} (both within 10\% of their limited-mode \acs{RPS}) because each variant's per-pod outbound concurrency is already saturated by the 50~\acp{VU} $\times$ $N=5$ load profile. \texttt{wasm-tinygo}'s 32\% lift comes from sharding the serial-dispatch work across four pod replicas via SpinKube's load-balancer rather than from any change to its per-pod behaviour.
+\end{sloppypar}
+
+\subsection{Latency}
+\label{sec:eval_fanout_latency}
+
 \begin{figure}[htbp]
     \centering
     \subfloat[Latency (limited).]{%
@@ -305,6 +353,13 @@ The HTTP fan-out workload (Section~\ref{sec:http_fanout_workload}) extends the e
     \caption{HTTP fan-out: p50/p95/p99 end-to-end latency.}
     \label{fig:fanout_latency}
 \end{figure}
+
+\begin{sloppypar}
+Figure~\ref{fig:fanout_latency} decomposes the throughput differential into end-to-end percentiles. In limited mode the median request times are 61.2\,ms for \texttt{docker-rust}, 82.1\,ms for \texttt{docker-golang}, 198.9\,ms for \texttt{wasm-rust}, and 952.7\,ms for \texttt{wasm-tinygo}. The floor is 50\,ms because each outbound \texttt{io-echo} call carries the artificial 50\,ms backend delay, so a fully concurrent fan-out cannot return faster than ${\sim}50$\,ms plus framing. \texttt{docker-rust}'s 61\,ms median therefore reflects near-perfect concurrency (the five outbound calls overlap almost completely). \texttt{wasm-rust}'s 199\,ms median reflects partial concurrency under \texttt{wasi:io/poll} suspension. \texttt{docker-golang}'s 82\,ms median reflects similar partial concurrency with goroutines. \texttt{wasm-tinygo}'s 953\,ms median reflects fully serial dispatch ($N=5$ calls each waiting 50\,ms plus per-call overhead, plus contention from 50 concurrent virtual users on a single pod). The tail is wide on every variant other than \texttt{docker-rust} (p95 70.6\,ms / p99 918.8\,ms), and approaches the k6 1500\,ms request timeout for the other three variants (\texttt{docker-golang} p99 1460.6\,ms, \texttt{wasm-rust} p99 1413.3\,ms, \texttt{wasm-tinygo} p99 1400.1\,ms). The I/O-bound regime is therefore the first workload where wasm-rust shows a materially wider tail than docker-rust in absolute milliseconds, not just relative percentage. Unlimited mode tightens the \texttt{docker-rust} tail to p95 100.4\,ms / p99 408.3\,ms but widens the \texttt{wasm-rust} tail further (p99 4234\,ms) because adding pod replicas does not reduce the per-pod outbound concurrency ceiling. Conversely, \texttt{wasm-tinygo}'s median drops from 953 to 389\,ms because four replicas reduce the per-pod virtual-user concentration. The unlimited-mode \texttt{wasm-rust} run is also the only run in the entire study to register a non-zero failure rate (0.026\% of requests, i.e.\ a handful of requests across the 60\,s hold phase), reflecting outbound-connection timeouts under the extreme tail.
+\end{sloppypar}
+
+\subsection{Error rate and memory footprint}
+\label{sec:eval_fanout_quality}
 
 \begin{figure}[htbp]
     \centering
@@ -319,12 +374,26 @@ The HTTP fan-out workload (Section~\ref{sec:http_fanout_workload}) extends the e
     \label{fig:fanout_quality}
 \end{figure}
 
-Under the default load profile (50~\acp{VU}, $N=5$, $\Delta=50$\,ms backend delay), the four variants distribute as follows: docker-rust sustains 525\,rps on the concurrent \texttt{reqwest~+~join\_all} path; wasm-rust achieves 124\,rps via \texttt{spin\_sdk::http::send~+~futures::join\_all}; docker-golang reaches 100\,rps with \texttt{net/http~+~goroutines~+~WaitGroup}; and wasm-tinygo lags at 47\,rps because TinyGo's wasip1 runtime forces sequential dispatch (Section~\ref{sec:impl_http_fanout}). The variant ordering in the I/O-bound regime is therefore not the same as in the \acs{CPU}-bound regime: docker-rust now leads by a wide margin (~4$\times$ over wasm-rust), wasm-rust beats docker-golang despite the older WASI~P1 runtime story predicting the reverse, and wasm-tinygo lags both by an additional factor of ~2.5 because TinyGo's wasip1 runtime forces serial outbound dispatch. The bottleneck is concurrent outbound dispatch efficiency, not single-handler throughput. This finding is revisited in Section~\ref{sec:discussion_fanout}.
+\begin{sloppypar}
+Figure~\ref{fig:fanout_quality} confirms that the limited-mode throughput and latency deltas are sustained-load findings rather than stability findings: every variant ran to completion at 0\% \acs{HTTP} request failure in limited mode under the default load profile (the only non-zero failure observation in the entire HTTP fan-out experiment is the 0.026\% unlimited-mode \texttt{wasm-rust} value discussed in \ref{sec:eval_fanout_latency}). The memory panel, however, departs sharply from the simpler workloads. The \texttt{wasm-rust} cell carries 77.5\,\acs{MB} \acs{RSS} idle and 77.6\,\acs{MB} peak---over $3\times$ the ${\sim}23$\,MB it carried on the prime sieve---because Spin's \texttt{wasi:http/outgoing-handler} accounts each in-flight outbound \acs{HTTP} connection inside the per-pod linear-memory region. \texttt{wasm-tinygo}'s 62\,\acs{MB} \acs{RSS} reflects the same Spin-side accounting plus the bundled TinyGo runtime. \texttt{docker-rust} and \texttt{docker-golang} sit at 14.3\,\acs{MB} and 15.6--18.5\,\acs{MB} respectively (idle / peak)---noticeably higher than their prime-sieve values (1--3\,\acs{MB} / 9\,\acs{MB}) but still markedly below the \acs{Wasm} cells because the outbound connection state lives on the kernel side rather than inside the \acs{Wasm} sandbox. The reading is that the per-pod ${\sim}20$\,\acs{MB} linear-memory tax observed in Section~\ref{sec:eval_resources} is a lower bound: a workload that holds non-trivial outbound state inside the sandbox can multiply it. Capacity planning for I/O-bound \acs{Wasm} services should therefore add a per-pod outbound-state budget to the static linear-memory baseline.
+\end{sloppypar}
+
+\subsection{Observed I/O-bound profile}
+\label{sec:eval_fanout_profile}
+
+\begin{sloppypar}
+Taken together, Figures~\ref{fig:fanout_sizes}--\ref{fig:fanout_quality} answer RQ3 for the I/O-bound regime in a way that the CPU- and memory-bandwidth panels could not. The runtime gap is not a constant: it widens from 2.58$\times$ on the prime sieve to 11.2$\times$ on the fan-out. The per-variant ordering reshuffles (\texttt{docker-rust} leads, \texttt{wasm-rust} beats \texttt{docker-golang}, \texttt{wasm-tinygo} is forced into serial dispatch). The per-pod resident-memory tax that Section~\ref{sec:eval_resources} attributed to Wasmtime's \acs{JIT} context grows substantially because outbound-connection state accumulates inside the linear-memory region. The artefact-size and startup-latency advantages of the \acs{Wasm} cells carry over essentially unchanged. The interpretation of the ordering inversion---which runtime's async-dispatch implementation is most efficient at multiplexing the 250 simultaneous outbound \acs{TCP} connections through the single-node cluster's \acs{CNI} fabric---is developed in Section~\ref{sec:discussion_fanout}. The operational hazard the experiment also surfaced (conntrack-table exhaustion of the stock-default cluster) is documented there as well.
+\end{sloppypar}
 
 \section{JSON Round-trip Results}
 \label{sec:eval_jsontx}
 
-The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) stresses serialization and small-object allocation under varying request-body size. The result panels follow the standard layout, plus the dedicated \texttt{n\_sweep.png} chart (Figure~\ref{fig:jsontx_nsweep}) showing throughput-vs-$N$ on a logarithmic horizontal axis.
+\begin{sloppypar}
+The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) stresses serialization and small-object allocation under varying request-body size. Each handler receives a JSON-encoded length-$N$ \texttt{i64} array, parses it into a runtime array, sorts in descending order, computes the median by index, returns the sorted array plus aggregate statistics, and re-serialises the response. Five metrics are reported below in the same order as Sections~\ref{sec:eval_size}--\ref{sec:eval_resources} (artefact size, startup latency, throughput, latency, error rate / memory), followed by the dedicated $N$-sweep panel (Figure~\ref{fig:jsontx_nsweep}) showing throughput-vs-$N$ on a logarithmic horizontal axis. As in Section~\ref{sec:eval_fanout}, the artefact-size, startup, and idle-time memory panels are workload-build properties that are identical across the two scaling modes. Only the limited-mode versions are embedded here. The unlimited-mode counterparts exist on disk in the thesis-experiments repository.
+\end{sloppypar}
+
+\subsection{Artefact sizes}
+\label{sec:eval_jsontx_size}
 
 \begin{figure}[htbp]
     \centering
@@ -339,6 +408,13 @@ The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) s
     \label{fig:jsontx_sizes}
 \end{figure}
 
+\begin{sloppypar}
+Figure~\ref{fig:jsontx_sizes} again confirms the artefact-density advantage of the \acs{Wasm} cells, with a small but informative shift from Section~\ref{sec:eval_fanout_size}. The \texttt{wasm-rust} cell ships 0.22\,\acs{MB} for both the image and the binary because \texttt{serde\_json} parses and re-emits the \acs{JSON} body inside the wasm linear-memory region without pulling in any Spin-side outbound \acs{HTTP} client. \texttt{wasm-tinygo} is 0.61\,\acs{MB} on both metrics---slightly larger than its 0.52\,\acs{MB} fan-out counterpart because TinyGo's standard-library \texttt{encoding/json} package pulls in additional reflection machinery that the fan-out handler does not need. \texttt{docker-rust} is 1.92\,\acs{MB} image / 1.71\,\acs{MB} binary---substantially smaller than its 3.82\,\acs{MB} fan-out image because the workload uses only \texttt{serde\_json} and \texttt{hyper}, without \texttt{reqwest} and \texttt{rustls}. \texttt{docker-golang} sits at 6.10\,\acs{MB} image / 5.89\,\acs{MB} binary, again the largest artefact in the matrix. The cross-workload pattern is therefore that the Docker artefacts grow or shrink with each new dependency pulled in by the workload's handler logic, while the \acs{Wasm} artefacts stay flat because the relevant host-side machinery (outbound \acs{HTTP}, request body streaming) lives in the Spin runtime rather than inside the \texttt{.wasm} module.
+\end{sloppypar}
+
+\subsection{Startup latency}
+\label{sec:eval_jsontx_startup}
+
 \begin{figure}[htbp]
     \centering
     \subfloat[Cold start.]{%
@@ -352,6 +428,13 @@ The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) s
     \label{fig:jsontx_startup}
 \end{figure}
 
+\begin{sloppypar}
+Figure~\ref{fig:jsontx_startup} shows the same three-fast-one-slow pattern as the earlier workloads. On cold start the three fast variants land within a 2.4\,ms band---\texttt{docker-rust} 27.8\,ms, \texttt{wasm-tinygo} 29.9\,ms, \texttt{wasm-rust} 30.3\,ms---all within ${\sim}10$\,ms of their fan-out and prime-sieve counterparts. The warm-start means are 28.4\,ms, 30.2\,ms, and 27.3\,ms respectively, with sub-6\,ms standard deviations across the five-sample window. \texttt{docker-golang} again is the outlier: its single cold-start sample lands at 8223\,ms (the longest cold-start measurement in the entire study), and its warm-start mean of 2814\,ms is the lowest \texttt{docker-golang} value but still two orders of magnitude above the other three variants. The conclusion already drawn from the prime-sieve panel holds: cold-start parity between SpinKube and \texttt{scratch}-based Docker variants is a workload-independent property of the request-handler dispatch path, while \texttt{docker-golang}'s startup overhead is a per-variant entrypoint property.
+\end{sloppypar}
+
+\subsection{Throughput}
+\label{sec:eval_jsontx_throughput}
+
 \begin{figure}[htbp]
     \centering
     \subfloat[Throughput (limited).]{%
@@ -361,9 +444,16 @@ The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) s
     \subfloat[Throughput (unlimited).]{%
         \includegraphics[width=0.49\textwidth]{figures/04-json-roundtrip/unlimited/throughput.png}%
         \label{fig:jsontx_tput_unl}}
-    \caption{JSON round-trip: sustained throughput in both scaling modes.}
+    \caption{JSON round-trip: sustained throughput in both scaling modes, default $N=1000$.}
     \label{fig:jsontx_throughput}
 \end{figure}
+
+\begin{sloppypar}
+Figure~\ref{fig:jsontx_throughput} reports throughput at the default sweep midpoint $N=1000$. In limited mode the four variants land within a tight 28\% band---\texttt{docker-golang} 1273.8\,\acs{RPS}, \texttt{docker-rust} 1228.5, \texttt{wasm-rust} 1211.5, \texttt{wasm-tinygo} 929.0---a 1.37$\times$ fastest-to-slowest spread. The two Rust variants are within 1.4\% of each other. \texttt{docker-golang} edges \texttt{wasm-rust} by 5\%. \texttt{wasm-tinygo} sits a further 24\% behind because of the TinyGo \texttt{encoding/json} parser's per-key allocation churn against its conservative GC. Unlimited mode preserves the ordering and the ratios. This is the narrowest cross-variant spread of the four workloads, but the headline finding only becomes visible in the $N$-sweep below: as $N$ grows the spread compresses further at the per-handler-cost end and the only variant that visibly diverges is \texttt{wasm-tinygo}.
+\end{sloppypar}
+
+\subsection{Latency}
+\label{sec:eval_jsontx_latency}
 
 \begin{figure}[htbp]
     \centering
@@ -374,9 +464,16 @@ The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) s
     \subfloat[Latency (unlimited).]{%
         \includegraphics[width=0.49\textwidth]{figures/04-json-roundtrip/unlimited/latency.png}%
         \label{fig:jsontx_lat_unl}}
-    \caption{JSON round-trip: p50/p95/p99 end-to-end latency.}
+    \caption{JSON round-trip: p50/p95/p99 end-to-end latency at the default $N=1000$.}
     \label{fig:jsontx_latency}
 \end{figure}
+
+\begin{sloppypar}
+Figure~\ref{fig:jsontx_latency} reports the percentile breakdown at the same default $N=1000$. In limited mode the medians are 12.1\,ms (\texttt{docker-rust}), 12.3 (\texttt{docker-golang} and \texttt{wasm-rust}), and 16.4\,ms (\texttt{wasm-tinygo}). The tails are also tight: p99 latencies are 28.4\,ms (\texttt{docker-rust}), 19.4 (\texttt{docker-golang}), 25.7 (\texttt{wasm-rust}), 31.7 (\texttt{wasm-tinygo})---all under 32\,ms and all clustered within a single millisecond band relative to the medians. Unlike the fan-out workload, the \acs{JSON} round-trip therefore does not produce a wider Wasm-side p99 tail because the parse/sort/aggregate critical path is purely \acs{CPU}-bound work inside the linear-memory region, with no outbound calls and no \texttt{wasi:io/poll} suspension points that could amplify variance.
+\end{sloppypar}
+
+\subsection{Error rate and memory footprint}
+\label{sec:eval_jsontx_quality}
 
 \begin{figure}[htbp]
     \centering
@@ -391,6 +488,13 @@ The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) s
     \label{fig:jsontx_quality}
 \end{figure}
 
+\begin{sloppypar}
+Figure~\ref{fig:jsontx_quality} confirms a 0\% \acs{HTTP} failure rate across every variant at every $N$ in limited mode---no requests were dropped or rejected, so the throughput numbers are sustained-handler measurements rather than degradation curves. The memory panel shows \acs{RSS} of 57.4--60.9\,\acs{MB} for \texttt{wasm-rust} (idle / peak), 59.1\,\acs{MB} peak for \texttt{wasm-tinygo} (the idle metric returned null for this variant under Prometheus's \texttt{container\_memory\_rss} scrape---a known artefact of the brief idle window during pod startup, not a measurement gap), 47.4\,\acs{MB} for \texttt{docker-rust}, and 37.3--42.8\,\acs{MB} for \texttt{docker-golang}. The Docker variants are markedly higher here than on the prime-sieve workload (where docker-rust was 1--3\,\acs{MB}) because \texttt{serde\_json} and Tokio together allocate non-trivial parse-tree state per request, and the same is true for Go's \texttt{encoding/json} package and \texttt{net/http} server. The \acs{Wasm} variants pay a similar per-request allocation cost on top of their pre-allocated linear-memory baseline. The cross-workload pattern is therefore that the ${\sim}20$\,\acs{MB} linear-memory tax noted in Section~\ref{sec:eval_resources} is a floor rather than a ceiling: the actual per-pod \acs{RSS} of a \acs{Wasm} component scales with the working-set size of the workload's per-request allocations, just as it does for a Docker container.
+\end{sloppypar}
+
+\subsection{Throughput vs.\ $N$ sweep}
+\label{sec:eval_jsontx_nsweep}
+
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.75\textwidth]{figures/04-json-roundtrip/limited/n_sweep.png}
@@ -398,7 +502,16 @@ The \acs{JSON} round-trip workload (Section~\ref{sec:json_roundtrip_workload}) s
     \label{fig:jsontx_nsweep}
 \end{figure}
 
-At small $N$ ($N=100$) all four variants serve nearly the same throughput (~1300--1430\,RPS) because the parse/sort/aggregate cost is dwarfed by the \acs{HTTP} framing overhead. As $N$ grows, the wasm-rust, docker-rust, and docker-golang curves stay nearly indistinguishable from each other: at $N=10\,000$ they sit within 3\,RPS of one another (~168--171\,RPS), and at $N=100\,000$ all three are at ~17\,RPS. The wasm-tinygo curve separates from the other three at every $N$ above 100, lagging by ~25\% at $N=1000$ and by ~12\% at $N=10\,000$; at $N=100\,000$ the spread between the fastest (docker-rust at 17.4\,RPS) and slowest (wasm-tinygo at 13.5\,RPS) variant is 1.29$\times$. The flatness of the wasm-rust curve relative to docker-rust is the headline result: under \acs{WASI}~P2 with \texttt{serde\_json}, the per-byte host-to-guest \acs{HTTP}-body copy is not measurable as a slope divergence at payloads up to 100\,000 i64s---it would only become legible at request bodies in the 10--100\,MiB range, which exceeds the scope of this study. The visible separation between wasm-tinygo and the other three is attributable to TinyGo's conservative \acs{GC} per-object allocator overhead, not to the \acs{WASI}~P2 boundary itself.
+\begin{sloppypar}
+Figure~\ref{fig:jsontx_nsweep} is the regime-defining panel and contains the headline finding of the \acs{JSON} round-trip experiment. At $N=100$ all four variants serve essentially the same throughput---\texttt{docker-golang} 1434.1\,\acs{RPS}, \texttt{wasm-rust} 1410.5, \texttt{docker-rust} 1386.0, \texttt{wasm-tinygo} 1318.5---because the parse/sort/aggregate cost is dwarfed by the \acs{HTTP} framing overhead at small payload sizes. As $N$ grows, the \texttt{wasm-rust}, \texttt{docker-rust}, and \texttt{docker-golang} curves stay nearly indistinguishable: at $N=10\,000$ they sit within 3\,\acs{RPS} of one another (170.9 / 171.4 / 168.3). At $N=100\,000$ all three converge to 17.1--17.4\,\acs{RPS}. The \texttt{wasm-tinygo} curve separates from the other three at every $N$ above 100, lagging by 27\% at $N=1000$, 12\% at $N=10\,000$, and 23\% at $N=100\,000$ (13.4 vs.\ 17.4\,\acs{RPS}, a 1.30$\times$ spread). The flatness of the \texttt{wasm-rust} curve relative to \texttt{docker-rust} is the headline result: under \acs{WASI}~P2 with \texttt{serde\_json}, the per-byte host-to-guest \acs{HTTP}-body copy is not measurable as a slope divergence at payloads up to 100\,000 \texttt{i64}s. The cost would only become legible at request bodies in the 10--100\,MiB range, which exceeds the scope of this study. The visible separation between \texttt{wasm-tinygo} and the other three is attributable to TinyGo's conservative \acs{GC} per-object allocator overhead, not to the \acs{WASI}~P2 boundary itself.
+\end{sloppypar}
+
+\subsection{Observed serialization profile}
+\label{sec:eval_jsontx_profile}
+
+\begin{sloppypar}
+Taken together, Figures~\ref{fig:jsontx_sizes}--\ref{fig:jsontx_nsweep} answer RQ3 for the serialization regime with an unexpected result: \texttt{wasm-rust} and \texttt{docker-rust} are operationally interchangeable at every payload size the experiment exercises, with the two curves overlaying within 0.1\,\acs{RPS} at $N=100\,000$. The theoretical Wasm-specific overhead---the per-byte host-to-guest body copy across the \texttt{wasi:http/types} interface---does not surface in measurable slope divergence at micro\-service-typical payload sizes. The cost the data does surface is on the TinyGo path: TinyGo's conservative \acs{GC} pays a per-object allocation tax that compounds with the parse-tree size, producing a 1.29$\times$ deficit at $N=100\,000$ that is intrinsic to the language toolchain rather than to the runtime. The practical implication---developed in Section~\ref{sec:discussion_jsontx}---is that serialization-heavy \acs{Wasm} microservices should prefer Rust over TinyGo for the foreseeable future, and that within the Rust path the choice between SpinKube and Docker can be made on grounds other than throughput (artefact density, security posture, debugger availability) without paying a measurable performance penalty.
+\end{sloppypar}
 
 \section{Developer Experience}
 \label{sec:eval_dx}
@@ -424,37 +537,57 @@ This section provides the qualitative assessment of the engineering effort requi
 
 \subsection{Toolchain Setup}
 
-The Docker variants require only a standard \texttt{docker build} workflow. Go~1.26's toolchain is a single binary download; Rust~1.94 requires \texttt{rustup} but is well-documented and cross-platform.
+\begin{sloppypar}
+The Docker variants require only a standard \texttt{docker build} workflow. Go~1.26's toolchain is a single binary download. Rust~1.94 requires \texttt{rustup} but is well-documented and cross-platform.
+\end{sloppypar}
 
+\begin{sloppypar}
 The wasm-rust variant adds \texttt{cargo-component} (\texttt{cargo install cargo-component}) and the \texttt{wasm32-wasip2} Rust target (\texttt{rustup target add wasm32-wasip2}). The \texttt{spin} \acs{CLI} is required for \texttt{spin registry push}. These are all first-party tools with stable documentation. The friction is rated Low-Medium because \texttt{cargo-component} is a separate install step not yet integrated into the \texttt{cargo} core toolchain.
+\end{sloppypar}
 
+\begin{sloppypar}
 The wasm-tinygo variant requires TinyGo~0.40.0 (installed as a \texttt{.tar.gz} release, no stable \texttt{apt} package on Ubuntu) and the \texttt{spin} \acs{CLI}. The \texttt{-target=wasip1} flag is required: TinyGo's \texttt{wasip2} target hardwires the \texttt{wasi:cli/command} world and cannot export \texttt{wasi:http/incoming-handler}. The Spin Go \acs{SDK} (\texttt{github.com/spinframework/spin-go-sdk/v2}) provides \texttt{spinhttp.Handle()} via a \acs{CGo} layer, exporting \texttt{fermyon:spin/inbound-http}, allowing the TinyGo handler to use standard \texttt{net/http} types.
+\end{sloppypar}
 
 \subsection{Dependency Compatibility}
 
 The Docker variants had no dependency issues. All crates and packages compile without modification.
 
-The wasm-rust variant uses only the \texttt{spin-sdk~=~"5.2.0"} crate and standard library dependencies. No proprietary socket crates are required; \texttt{wasm32-wasip2} is a Tier~2 stable Rust target since Rust~1.82.
+\begin{sloppypar}
+The wasm-rust variant uses only the \texttt{spin-sdk~=~"5.2.0"} crate and standard library dependencies. No proprietary socket crates are required. The \texttt{wasm32-wasip2} target is a Tier~2 stable Rust target since Rust~1.82~\cite{rustblogwasip2}.
+\end{sloppypar}
 
-The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). Standard \texttt{net/http} types work without modification; no \texttt{//go:wasmimport} socket directives or custom \texttt{server.go} are required.
+\begin{sloppypar}
+The wasm-tinygo variant uses \texttt{spinhttp.Handle()} from the official Spin \acs{SDK} for Go (\texttt{github.com/spinframework/spin-go-sdk/v2}). Standard \texttt{net/http} types work without modification. No \texttt{//go:wasmimport} socket directives or custom \texttt{server.go} are required.
+\end{sloppypar}
 
 \subsection{Kubernetes Integration}
 
 Docker variants require standard \acs{K8s} manifests with no special configuration.
 
+\begin{sloppypar}
 The Spin variants require: (1) a cluster-level \texttt{RuntimeClass} object (\texttt{wasmtime-spin}), (2) the SpinOperator \acs{CRD} and Helm chart (installed once via \texttt{make deploy}), and (3) \texttt{SpinApp} \acs{CRD} manifests instead of standard \texttt{Deployment} + \texttt{Service} manifests. The \texttt{SpinApp} resource is more opinionated than a raw \texttt{Deployment} but conceptually simpler (no pod template, no replica management outside the \acs{CRD}). The cluster setup (\texttt{containerd-shim-spin-v2} installation, containerd plugin registration) is automated by \texttt{cloud-init.sh} and requires no manual intervention after initial provisioning.
+\end{sloppypar}
 
+\begin{sloppypar}
 The SpinKube integration is comparable in operational complexity to standard \acs{K8s} Helm-chart workflows: \texttt{containerd-shim-spin-v2} is a static binary installed by \texttt{cloud-init}, and the SpinOperator is delivered as a Helm chart with a single \texttt{kubectl apply} for the supporting \texttt{RuntimeClass} and \acs{CRD}s.
+\end{sloppypar}
 
 \subsection{Debugging and Observability}
 
+\begin{sloppypar}
 Docker containers support the full debugging toolkit: \texttt{kubectl exec} for interactive shell access, \texttt{docker logs} for stdout/stderr, and native debuggers (Delve for Go, \texttt{rust-gdb} for Rust) can be attached to running processes.
+\end{sloppypar}
 
-Spin \acs{Wasm} pods support stdout/stderr log output (via \texttt{kubectl logs}). \texttt{kubectl exec} cannot open a shell into a \acs{Wasm} pod because the \acs{WASI} environment does not expose a shell binary or an interactive \acs{PTY} interface. No debugger can attach to a running Wasmtime process from outside the \acs{Wasm} sandbox. The absence of debugger support increases the iteration cycle when diagnosing runtime failures; in practice most issues surface at build time as standard Rust or Go compilation errors rather than at runtime.
+\begin{sloppypar}
+Spin \acs{Wasm} pods support stdout/stderr log output (via \texttt{kubectl logs}). However, \texttt{kubectl exec} cannot open a shell into a \acs{Wasm} pod because the \acs{WASI} environment does not expose a shell binary or an interactive \acs{PTY} interface. No debugger can attach to a running Wasmtime process from outside the \acs{Wasm} sandbox. The absence of debugger support increases the iteration cycle when diagnosing runtime failures. In practice, most issues surface at build time as standard Rust or Go compilation errors rather than at runtime.
+\end{sloppypar}
 
 \section{Summary of Findings}
 \label{sec:eval_summary}
 
 \textit{Quantitative summary will be populated once benchmark measurements are complete. The qualitative developer experience findings are complete above.}
 
+\begin{sloppypar}
 The key qualitative finding is that SpinKube/\acs{WASI}~P2 provides a low-friction Wasm development experience. All four dependency compatibility ratings sit at Low because standard \texttt{net/http} and standard Rust networking abstractions work correctly without proprietary workarounds. K8s integration friction is low because \texttt{containerd-shim-spin-v2} is a static binary installed by \texttt{cloud-init} without source compilation. The remaining friction (Medium for toolchain setup and debugging) is inherent to the \acs{Wasm}/\acs{WASI} execution model and is expected to decrease as the ecosystem matures.
+\end{sloppypar}
